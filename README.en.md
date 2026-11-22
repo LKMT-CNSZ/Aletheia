@@ -1,12 +1,12 @@
-# FilmInvert Native
+# Aletheia
 
-Download the **3.1.1 stable release**: [Windows installer, portable ZIP and matching source](https://github.com/LKMT-CNSZ/FilmInvert-Native/releases/tag/v3.1.1).
+Download the **3.1.1 stable release**: [Windows installer, portable ZIP and matching source](https://github.com/LKMT-CNSZ/Aletheia/releases/tag/v3.1.1).
 
 **3.1.1 stable release:** film-edge exclusion for automatic metering; single-image highlights/shadows/whites/blacks; local tone mapping; multi-exposure HDR merging; linear ICC-tagged float32 HDR TIFF; native Windows scRGB HDR preview. Read [the HDR guide](HDR-GUIDE.md). HDR display is experimental: FP16 creation and SDR refusal were tested, while visual validation on HDR hardware is pending.
 
 **A local film inversion and photo editing tool for Windows.**
 
-FilmInvert Native turns digitized color and black-and-white negatives into editable positive images. It brings RAW input, whole-strip scans, independent photo editing, batch proofing and ICC-tagged 16-bit TIFF export into one native Qt desktop application. Installer and portable ZIP editions include their own Python runtime.
+Aletheia turns digitized color and black-and-white negatives into editable positive images. It brings RAW input, whole-strip scans, independent photo editing, batch proofing and ICC-tagged 16-bit TIFF export into one native Qt desktop application. Installer and portable ZIP editions include their own Python runtime.
 
 Since version **3.0.1**, the app offers a **Simplified Chinese / English** interface. Choose a language from the toolbar or **View → Language / 语言**. The interface updates immediately and remembers your choice. Open photos, edits, history and queued exports remain in place; filenames, roll tags and other user-entered text keep their original spelling.
 
@@ -26,7 +26,7 @@ Since version **3.0.1**, the app offers a **Simplified Chinese / English** inter
 
 ## Download
 
-Download the installer, portable ZIP, matching source and SHA256 checksums from [v3.1.1](https://github.com/LKMT-CNSZ/FilmInvert-Native/releases/tag/v3.1.1). This is the stable release.
+Download the installer, portable ZIP, matching source and SHA256 checksums from [v3.1.1](https://github.com/LKMT-CNSZ/Aletheia/releases/tag/v3.1.1). This is the stable release.
 
 This build adds a 1.2-second mascot film-development startup animation, a 1.6-second soft reveal on each frame change, a fix for overlapping navigation cards, and unified SDR TIFF, float32 HDR TIFF and Windows HDR JXR export.
 
@@ -81,7 +81,7 @@ Processing runs locally. The native desktop application does not start a web ser
 
 ## Short description for GitHub
 
-A local film inversion and photo editing tool for Windows, with Chinese and English interfaces. Supports color and B&W negatives, RAW and whole-strip scans, independent photo editing, batch proofing and export, and ICC-tagged 16-bit TIFF output. Available as an installer or portable ZIP.
+Aletheia is a local film inversion and photo editing tool for Windows, with Chinese and English interfaces. Supports color and B&W negatives, RAW and whole-strip scans, independent photo editing, batch proofing and export, and ICC-tagged 16-bit TIFF output. Available as an installer or portable ZIP.
 
 The toolbar **HDR canvas** switch enables native HDR directly in the editable main canvas. System HDR is required. Exposure, undo, sampling, zoom and photo navigation remain available. The histogram reports SDR output statistics; SDR proofing overlays are unavailable while the HDR canvas is active. Hardware visual QA is pending.
 
@@ -93,7 +93,7 @@ The top Export TIFF button and Ctrl+Shift+S now offer SDR TIFF - 16bit and HDR T
 
 ## Windows HDR delivery
 
-Export TIFF / HDR offers Windows HDR - JPEG XR (*.jxr), selected by default when the HDR canvas is active. Native WIC encoding converts working primaries to linear sRGB and scales nominal-white pixels by 203/80 into absolute scRGB units. It does not bake in a monitor-specific shoulder. Float TIFF remains the editing master; keep your project for further edits. JXR re-import is not supported yet. The codec uses Lossless mode but its float preprocessing can quantize values; bit-exact float preservation is not promised. Native encode/decode and export UI checks pass; the user opened the real JXR in Microsoft Photos and reported brightness closer to the FilmInvert preview. This is user visual feedback, not instrument-based or cross-device validation. Other viewers may use different tone mapping.
+Export TIFF / HDR offers Windows HDR - JPEG XR (*.jxr), selected by default when the HDR canvas is active. Native WIC encoding converts working primaries to linear sRGB and scales nominal-white pixels by 203/80 into absolute scRGB units. It does not bake in a monitor-specific shoulder. Float TIFF remains the editing master; keep your project for further edits. JXR re-import is not supported yet. The codec uses Lossless mode but its float preprocessing can quantize values; bit-exact float preservation is not promised. Native encode/decode and export UI checks pass; the user opened the real JXR in Microsoft Photos and reported brightness closer to the Aletheia preview. This is user visual feedback, not instrument-based or cross-device validation. Other viewers may use different tone mapping.
 
 ## First-view reveal and frame navigation
 
@@ -111,7 +111,7 @@ A 1.2-second left-to-right soft reveal develops the supplied red-and-white masco
 
 ## Application icon
 
-The application window, splash taskbar icon, shortcuts and installer use the supplied red-and-white FilmInvert film logo, with seven Windows ICO sizes from 16 to 256 pixels. The 1.2-second startup reveal continues to show the film mascot.
+The application window, splash taskbar icon, shortcuts and installer use the supplied red-and-white Aletheia film logo, with seven Windows ICO sizes from 16 to 256 pixels. The 1.2-second startup reveal continues to show the film mascot.
 
 
 ## Shortcut icon cache fix

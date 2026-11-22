@@ -1,4 +1,4 @@
-# FilmInvert Native
+# Aletheia
 
 **3.1.1 正式版：**新增片边排除测光、单张高光/阴影/黑白场、局部色调映射、多曝光 HDR 合成、线性 ICC float32 HDR TIFF 和 Windows 原生 HDR 预览。用法及限制见 [HDR 指南](HDR-GUIDE.md)。HDR 显示目前为实验功能，已验证 FP16 通道和 SDR 拒绝，HDR 硬件视觉验收尚待完成。
 
@@ -6,7 +6,7 @@
 
 **在本机完成胶片反相、逐帧精修与批量交付。**
 
-FilmInvert Native 是一款面向 Windows 的胶片数字化修片工具，适用于相机翻拍和扫描得到的彩色负片、黑白负片及整条胶片图像。从片基取样、密度域反相、明暗与色彩调整，到切帧、几何校正、局部修复和 16bit TIFF 导出，可以在同一个原生桌面界面中完成。
+Aletheia 是一款面向 Windows 的胶片数字化修片工具，适用于相机翻拍和扫描得到的彩色负片、黑白负片及整条胶片图像。从片基取样、密度域反相、明暗与色彩调整，到切帧、几何校正、局部修复和 16bit TIFF 导出，可以在同一个原生桌面界面中完成。
 
 软件采用黑白灰的极简“暗房”布局：中央大图、右侧调色、底部照片与胶片帧导航。既适合逐张处理，也支持把一批照片组织成可暂停、可恢复、经过人工复核的导出流程。
 
@@ -83,14 +83,14 @@ FilmInvert Native 是一款面向 Windows 的胶片数字化修片工具，适�
 
 ## 下载与安装
 
-前往 [v3.1.1 下载页面](https://github.com/LKMT-CNSZ/FilmInvert-Native/releases/tag/v3.1.1)，选择 Windows x64 发行文件：
+前往 [v3.1.1 下载页面](https://github.com/LKMT-CNSZ/Aletheia/releases/tag/v3.1.1)，选择 Windows x64 发行文件：
 
 | 文件 | 用途 |
 | --- | --- |
-| [FilmInvert-Native-3.1.1-setup-win64-20261030.exe](https://github.com/LKMT-CNSZ/FilmInvert-Native/releases/download/v3.1.1/FilmInvert-Native-3.1.1-setup-win64-20261030.exe) | 常规安装，提供开始菜单、可选桌面入口与卸载 |
-| [FilmInvert-Native-3.1.1-compat-win64-20261030.zip](https://github.com/LKMT-CNSZ/FilmInvert-Native/releases/download/v3.1.1/FilmInvert-Native-3.1.1-compat-win64-20261030.zip) | 免安装版，完整解压后直接运行 |
-| [FilmInvert-Native-3.1.1-source-20261030.zip](https://github.com/LKMT-CNSZ/FilmInvert-Native/releases/download/v3.1.1/FilmInvert-Native-3.1.1-source-20261030.zip) | 对应应用源码、构建与验证脚本 |
-| [SHA256 文本清单](https://github.com/LKMT-CNSZ/FilmInvert-Native/releases/download/v3.1.1/SHA256-3.1.1.txt) / [JSON 清单](https://github.com/LKMT-CNSZ/FilmInvert-Native/releases/download/v3.1.1/SHA256-3.1.1.json) | 发行文件完整性校验 |
+| [FilmInvert-Native-3.1.1-setup-win64-20261030.exe](https://github.com/LKMT-CNSZ/Aletheia/releases/download/v3.1.1/FilmInvert-Native-3.1.1-setup-win64-20261030.exe) | 常规安装，提供开始菜单、可选桌面入口与卸载 |
+| [FilmInvert-Native-3.1.1-compat-win64-20261030.zip](https://github.com/LKMT-CNSZ/Aletheia/releases/download/v3.1.1/FilmInvert-Native-3.1.1-compat-win64-20261030.zip) | 免安装版，完整解压后直接运行 |
+| [FilmInvert-Native-3.1.1-source-20261030.zip](https://github.com/LKMT-CNSZ/Aletheia/releases/download/v3.1.1/FilmInvert-Native-3.1.1-source-20261030.zip) | 对应应用源码、构建与验证脚本 |
+| [SHA256 文本清单](https://github.com/LKMT-CNSZ/Aletheia/releases/download/v3.1.1/SHA256-3.1.1.txt) / [JSON 清单](https://github.com/LKMT-CNSZ/Aletheia/releases/download/v3.1.1/SHA256-3.1.1.json) | 发行文件完整性校验 |
 
 两种运行包均包含独立的官方 Python / Qt 运行时，**不需要另外安装 Python 或 Qt**。
 
@@ -197,7 +197,7 @@ FilmInvert Native 是一款面向 Windows 的胶片数字化修片工具，适�
 
 「导出 TIFF / HDR…」新增 Windows HDR - JPEG XR (*.jxr)。主画布 HDR 开启时默认选中 JXR；HDR TIFF 仍可选，文件菜单「导出线性 HDR TIFF」默认选择 TIFF。JXR 使用 Windows 原生 WIC 编码器，工作空间转换为线性 sRGB 后按 203/80 缩放为 scRGB 绝对亮度单位，保留超过 1 的数据，不烘焙当前屏幕的高光肩部。
 
-JXR 采用编码器的 Lossless 选项，但浮点预处理存在精度量化，不承诺原浮点位逐字节一致；HDR TIFF 继续用作浮点编辑母版。JXR 面向 Windows HDR 查看，不能保证所有平台都能打开。不同查看器仍可能采用不同高光映射，需在目标软件实测。原生编码/解码的数值和保存窗口路径验证已通过。用户已用 Windows「照片」打开同图 JXR，反馈亮度更接近 FilmInvert 预览；这是用户目视反馈，尚未进行仪器测量或跨设备验收。JXR 暂不支持重新导入 FilmInvert，继续编辑请保留工程和 TIFF 母版。
+JXR 采用编码器的 Lossless 选项，但浮点预处理存在精度量化，不承诺原浮点位逐字节一致；HDR TIFF 继续用作浮点编辑母版。JXR 面向 Windows HDR 查看，不能保证所有平台都能打开。不同查看器仍可能采用不同高光映射，需在目标软件实测。原生编码/解码的数值和保存窗口路径验证已通过。用户已用 Windows「照片」打开同图 JXR，反馈亮度更接近 Aletheia 预览；这是用户目视反馈，尚未进行仪器测量或跨设备验收。JXR 暂不支持重新导入 Aletheia，继续编辑请保留工程和 TIFF 母版。
 
 ## 首次查看显影与帧导航
 
@@ -215,7 +215,7 @@ JXR 采用编码器的 Lossless 选项，但浮点预处理存在精度量化，
 
 ## 软件图标
 
-应用窗口、启动窗口的任务栏图标、快捷方式和安装包统一使用新的红白 FilmInvert 胶片标志。Windows ICO 包含 16、24、32、48、64、128、256 像素尺寸。启动显影画面继续使用胶片吉祥物，时长仍为 1.2 秒。
+应用窗口、启动窗口的任务栏图标、快捷方式和安装包统一使用新的红白 Aletheia 胶片标志。Windows ICO 包含 16、24、32、48、64、128、256 像素尺寸。启动显影画面继续使用胶片吉祥物，时长仍为 1.2 秒。
 
 
 ## 快捷方式图标缓存修复
