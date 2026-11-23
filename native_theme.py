@@ -71,8 +71,8 @@ QMenu::separator { height:1px; background:#414141; margin:5px 8px; }
 QStatusBar { background:#191919; color:#ababab; border-top:1px solid #303030; }
 QStatusBar::item { border:0; }
 QStatusBar QLabel { color:#ababab; padding:3px 5px; }
-QProgressBar { color:#ededed; border:0; background:#303030; min-height:8px; max-height:15px; text-align:center; }
-QProgressBar::chunk { background:#bdbdbd; }
+QProgressBar { color:#ededed; border:0; background:#303030; min-height:16px; text-align:center; }
+QProgressBar::chunk { background:#3d6488; }
 QLabel[role="brand"] { color:#ffffff; font-family:"Segoe UI","Microsoft YaHei UI"; font-size:18px; font-weight:600; padding:0 12px 0 2px; }
 QLabel[role="section"] { color:#ededed; font-size:12px; font-weight:600; padding-top:14px; padding-bottom:6px; }
 QLabel[role="note"] { color:#ababab; font-size:11px; padding:4px 0; }

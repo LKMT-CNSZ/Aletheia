@@ -115,6 +115,8 @@ def ui(call, *args, **kwargs):
         if value is not None:_bind(obj, 'setItemText', (index,value), index)
     elif name == 'addTab':
         _bind(obj, 'setTabText', (result,args[-1]), result)
+    elif name == 'setTabText':
+        _bind(obj, 'setTabText', args, args[0])
     elif name == 'addMenu' and args and isinstance(args[0], str):
         _bind(result, 'setTitle', (args[0],))
     elif name == 'addRow' and isinstance(obj, QFormLayout) and len(args)==2 and isinstance(args[0], str):

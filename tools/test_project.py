@@ -55,7 +55,7 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build'/'tests',prefix='project-') as 
     assert data['options']=={'keep_params':False,'auto_meter':False}
     assert data['source']['relative_path']==source.name
     before=model.export_roll(folder,window.p,False,threading.Event(),lambda *a:None)
-    before_manifest=json.loads((Path(before['folder'])/'manifest.json').read_text('utf-8'))
+    before_manifest=before['frames']
     first_thumb=model.thumbnails()[0]
     window.open_path(str(ROOT/'samples'/'pro-light-demo.tif'));idle()
     window.open_project_path(str(project));idle()
@@ -64,7 +64,7 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build'/'tests',prefix='project-') as 
     assert not window.keep_check.isChecked() and not window.meter_check.isChecked()
     assert model.thumbnails()[0]==first_thumb
     after=model.export_roll(folder,window.p,False,threading.Event(),lambda *a:None)
-    after_manifest=json.loads((Path(after['folder'])/'manifest.json').read_text('utf-8'))
+    after_manifest=after['frames']
     assert [r['params'] for r in before_manifest]==[r['params'] for r in after_manifest]
     for old,new in zip(before_manifest,after_manifest):
         assert np.array_equal(read_tiff(str(Path(before['folder'])/old['file'])),

@@ -82,7 +82,7 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build/tests',prefix='stream-') as tmp
  import desktop_model as model
  source=folder/'source.tif';write_tiff_rgb16(source,wide);model.open_image(source,input_mode='single')
  original=server.export_pixels
- def fail(path,*args):Path(path).write_bytes(b'partial');raise OSError('injected I/O failure')
+ def fail(path,*args,**kwargs):Path(path).write_bytes(b'partial');raise OSError('injected I/O failure')
  server.export_pixels=fail
  try:
   try:model.export_image(folder/'never.tif',model.engine.STATE['params'].__dict__)

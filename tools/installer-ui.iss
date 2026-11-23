@@ -48,24 +48,24 @@ begin
   Side := TPanel.Create(WizardForm); Side.Parent := WizardForm;
   Side.SetBounds(0,0,ScaleX(196),ScaleY(496)); Side.BevelOuter := bvNone; Side.Color := $202020;
   PictureOn(Side,'logo.bmp',22,20,56,56);
-  Brand := TextOn(Side,24,85,160,60,'FilmInvert'+#13#10+'Native',16,$E1E6E8);
+  Brand := TextOn(Side,24,85,160,60,'{#ProductName}',16,$E1E6E8);
   TextOn(Side,24,158,155,45,L('FILM NEGATIVE', '胶片负片')+#13#10+L('PROCESSING', '处理工作流'),8,$8D9192);
   for I:=0 to 4 do Steps[I] := TextOn(Side,24,220+I*32,155,25,'',9,$8D9192);
   TextOn(Side,24,436,170,40,L('VERSION {#AppVersion}', '版本 {#AppVersion}')+#13#10+'WINDOWS 10 / 11   x64',8,$8D9192);
   StageTitle := TextOn(WizardForm.InnerPage,36,30,632,65,'',21,$E1E6E8);
   FooterStatus := TextOn(WizardForm,24,520,540,25,L('READY TO INSTALL', '准备安装'),8,$8D9192);
   WizardForm.WelcomeLabel1.SetBounds(ScaleX(36),ScaleY(30),ScaleX(632),ScaleY(52));
-  WizardForm.WelcomeLabel1.Font.Size:=20; WizardForm.WelcomeLabel1.Caption:=L('Welcome to FilmInvert Native', '欢迎使用 FilmInvert Native');
+  WizardForm.WelcomeLabel1.Font.Size:=20; WizardForm.WelcomeLabel1.Caption:=L('Welcome to {#ProductName}', '欢迎使用 {#ProductName}');
   WizardForm.WelcomeLabel2.SetBounds(ScaleX(36),ScaleY(93),ScaleX(632),ScaleY(95));
   WizardForm.WelcomeLabel2.Caption:=L('A better way to process film negatives.', '为胶片负片打造的专业处理流程。')+#13#10+#13#10+
-    L('FilmInvert Native provides a dedicated workflow for removing the orange mask and converting scanned film negatives into positive images.', 'FilmInvert Native 专注于胶片数字化，提供从橙色色罩去除、负片反转到色彩还原的完整工作流，将扫描后的胶片负片转换为正片。');
+    L('{#ProductName} provides a dedicated workflow for removing the orange mask and converting scanned film negatives into positive images.', '{#ProductName} 专注于胶片数字化，提供从橙色色罩去除、负片反转到色彩还原的完整工作流，将扫描后的胶片负片转换为正片。');
   PictureOn(WizardForm.WelcomePage,'negative.bmp',36,202,200,148);
   PictureOn(WizardForm.WelcomePage,'mask.bmp',248,202,200,148);
   PictureOn(WizardForm.WelcomePage,'positive.bmp',460,202,200,148);
   TextOn(WizardForm.WelcomePage,36,365,200,24,L('NEGATIVE  →', '负片  →'),9,$E1E6E8);
   TextOn(WizardForm.WelcomePage,248,365,200,24,L('MASK REMOVAL  →', '去除色罩  →'),9,$4A7DC7);
   TextOn(WizardForm.WelcomePage,460,365,200,24,L('POSITIVE', '正片'),9,$E1E6E8);
-  TextOn(WizardForm.WelcomePage,36,428,632,30,L('SYNTHETIC REFERENCE   /   FRAME 001   /   MASK REMOVAL DEMO', '合成流程示例   /   第 001 帧   /   去色罩与反相演示'),8,$8D9192);
+  TextOn(WizardForm.WelcomePage,36,428,632,30,L('REAL FILM SCAN   /   FRAME 001   /   MASK REMOVAL DEMO', '实拍胶片示例   /   第 001 帧   /   去色罩与反相演示'),8,$8D9192);
   WizardForm.FinishedHeadingLabel.SetBounds(ScaleX(36),ScaleY(68),ScaleX(632),ScaleY(60));
   WizardForm.FinishedHeadingLabel.Font.Size:=21;
   WizardForm.FinishedLabel.SetBounds(ScaleX(36),ScaleY(140),ScaleX(632),ScaleY(150));
@@ -96,7 +96,7 @@ begin
       if GetSpaceOnDisk(AddBackslash(ExtractFileDrive(WizardDirValue)),True,FreeMB,TotalMB) then AvailableSpace.Caption:=L('Available on destination drive: ', '目标磁盘可用空间：')+IntToStr(FreeMB)+' MB';
     end;
     wpSelectTasks: begin Index:=2; StageTitle.Caption:=L('Installation Options', '安装选项'); end;
-    wpPreparing,wpInstalling: begin Index:=3; StageTitle.Caption:=L('Installing FilmInvert Native', '正在安装 FilmInvert Native'); end;
+    wpPreparing,wpInstalling: begin Index:=3; StageTitle.Caption:=L('Installing {#ProductName}', '正在安装 {#ProductName}'); end;
     wpFinished: Index:=4;
   end;
   for I:=0 to 4 do begin
@@ -108,7 +108,7 @@ begin
     FinishedShortcut.Visible:=CleanupVerified and not WizardIsTaskSelected('desktopicon');
     if CleanupVerified then begin
       WizardForm.FinishedHeadingLabel.Caption:=L('Installation Complete', '安装完成');
-      WizardForm.FinishedLabel.Caption:=L('FilmInvert Native is ready.', 'FilmInvert Native 已准备就绪。')+#13#10+#13#10+
+      WizardForm.FinishedLabel.Caption:=L('{#ProductName} is ready.', '{#ProductName} 已准备就绪。')+#13#10+#13#10+
         L('Your projects, photos, exports and user settings are preserved.', '您的工程、照片、导出文件和用户设置均已保留。')+#13#10+
         L('Upgrade details: ', '升级详情：')+ExpandConstant('{app}\upgrade-result.json');
       FooterStatus.Caption:=L('INSTALLATION VERIFIED', '安装验证通过');
@@ -144,7 +144,7 @@ procedure CurStepChanged(CurStep: TSetupStep);
 var Code: Integer; Args,Scope: String; Report: AnsiString;
 begin
   if (CurStep=ssDone) and CleanupVerified and FinishedShortcut.Visible and FinishedShortcut.Checked then
-    CreateShellLink(ExpandConstant('{autodesktop}\FilmInvert Native {#AppVersion}.lnk'),'FilmInvert Native',ExpandConstant('{app}\runtime\pythonw.exe'),'-I -m film_invert_launcher',ExpandConstant('{app}'),ExpandConstant('{app}\app\assets\filminvert-native-856209a72631.ico'),0,SW_SHOWNORMAL);
+    CreateShellLink(ExpandConstant('{autodesktop}\{#ProductName} {#AppVersion}.lnk'),'{#ProductName}',ExpandConstant('{app}\runtime\pythonw.exe'),'-I -m film_invert_launcher',ExpandConstant('{app}'),ExpandConstant('{app}\app\assets\filminvert-native-856209a72631.ico'),0,SW_SHOWNORMAL);
   if CurStep=ssPostInstall then begin
     WizardForm.CancelButton.Enabled:=False; FooterStatus.Caption:=L('VERIFYING NEW INSTALLATION', '正在验证新版本安装');
     TaskStatus.Caption:=L('APPLICATION FILES / COMPLETE', '应用程序文件 / 已完成')+#13#10+#13#10+L('CONFIGURATION / COMPLETE', '配置 / 已完成')+#13#10+#13#10+L('SHORTCUTS / COMPLETE', '快捷方式 / 已完成')+#13#10+#13#10+L('VERIFY INSTALLATION / IN PROGRESS', '验证安装 / 正在进行')+#13#10+#13#10+L('REMOVE OLD VERSION / AFTER VERIFICATION', '移除旧版本 / 验证通过后执行');

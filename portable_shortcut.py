@@ -5,6 +5,7 @@ from ctypes import wintypes
 import os
 import uuid
 import hashlib
+from app_paths import APP_NAME
 
 def shortcut_icon(bundle):
     # A new path invalidates Explorer's cached icon when artwork changes.
@@ -41,10 +42,10 @@ def create(bundle):
         check(invoke(shell,20,[wintypes.LPCWSTR],str(exe)))
         check(invoke(shell,11,[wintypes.LPCWSTR],'-I -m film_invert_launcher'))
         check(invoke(shell,9,[wintypes.LPCWSTR],str(bundle)))
-        check(invoke(shell,7,[wintypes.LPCWSTR],'FilmInvert Native - local portable runtime'))
+        check(invoke(shell,7,[wintypes.LPCWSTR],f'{APP_NAME} - local portable runtime'))
         check(invoke(shell,17,[wintypes.LPCWSTR,ctypes.c_int],str(shortcut_icon(bundle)),0))
         check(invoke(shell,0,[ctypes.c_void_p,ctypes.POINTER(ctypes.c_void_p)],ctypes.byref(persist_iid),ctypes.byref(persist)))
-        target=bundle/'胶片工作室.lnk'
+        target=bundle/f'{APP_NAME}.lnk'
         check(invoke(persist,6,[wintypes.LPCWSTR,wintypes.BOOL],str(target),True))
         # Notify the actual changed item instead of flushing every application's cache.
         notify=ctypes.windll.shell32.SHChangeNotify

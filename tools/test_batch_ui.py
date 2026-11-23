@@ -1,4 +1,4 @@
-"""Real Qt workflow controls, real child preparation/export and automatic report."""
+"""Real Qt workflow controls, child preparation/export and explicit reports."""
 from pathlib import Path
 import os,sys,tempfile,time,copy,json,hashlib
 os.environ['QT_QPA_PLATFORM']='offscreen'
@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build/tests',prefix='batch-ui-') as t
             if exports:busy=busy or window.queue_controller.running() or any(j['status']=='queued' for j in window.studio_store.jobs())
             if not busy:stable+=1
             else:stable=0
-            if stable>65:break # includes delayed automatic report scheduling
+            if stable>65:break
         else:raise AssertionError('workflow timeout')
         assert not errors,errors
     window.open_dropped_paths([str(p) for p in paths]);idle();identifier=window.current_batch_id
@@ -60,13 +60,19 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build/tests',prefix='batch-ui-') as t
     dialog.proof(4);app.processEvents();assert len(dialog.proof_dialog.cells)==4
     dialog.proof_dialog.before.setChecked(True);app.processEvents();assert all(not c.pixmap().isNull() for c in dialog.proof_dialog.cells)
     dialog.proof_dialog.close();dialog.proof(9);app.processEvents();assert len(dialog.proof_dialog.cells)==9;dialog.proof_dialog.close()
-    dialog.review();dialog.enqueue();data=window.batch_store.get(identifier)
+    dialog.review();dialog.jpeg_export.setChecked(True);dialog.enqueue();data=window.batch_store.get(identifier)
     assert len([i for i in data['items'] if i.get('job')])==9
     frozen=[window.studio_store.get_job(i['job'])['snapshot'] for i in data['items']]
     dialog.naming.setText('future-{frame:03d}');assert dialog.save_settings()
     assert frozen==[window.studio_store.get_job(i['job'])['snapshot'] for i in data['items']]
     dialog.start_exports();idle(True);data=window.batch_store.get(identifier)
     assert all(window.studio_store.get_job(i['job'])['status']=='completed' for i in data['items'])
+    assert dialog.export_progress.maximum()==9 and dialog.export_progress.value()==9
+    output=Path(data['config']['output'])
+    assert len(list(output.iterdir()))==18 and all(path.is_file() and path.suffix in ('.tif','.jpg') for path in output.iterdir())
+    assert {path.stem for path in output.glob('*.tif')}=={path.stem for path in output.glob('*.jpg')}
+    assert not data.get('report')
+    dialog.run('report');idle(True);data=window.batch_store.get(identifier)
     assert data.get('report'),data.get('report_error')
     summary=json.loads((Path(data['report']['path'])/'batch-summary.json').read_text('utf-8'))
     assert summary['completed_frames']==9 and len(summary['contact_pages'])==1 and not summary['failures']
@@ -76,4 +82,4 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build/tests',prefix='batch-ui-') as t
     assert restored.workflow_dialog.identifier==identifier and restored.workflow_dialog.table.rowCount()==9
     assert any('需检查' in restored.workflow_dialog.table.item(i,5).text() for i in range(9))
     restored.loaded=False;restored.close();app.processEvents()
-print('PASS Qt batch create/settings/groups/sync/current reload, real isolated serial preparation and nine export processes, 4/9 proof before/after, frozen queue, automatic sRGB contact/report, reopened identity checks, source unchanged')
+print('PASS Qt batch workflow, nine image-only export processes, progress, explicit sRGB contact/report and source identity')

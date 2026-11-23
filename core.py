@@ -22,7 +22,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict, field, replace
 import geometry
 
 import numpy as np
@@ -148,6 +148,16 @@ class Params:
     hdr_limit: float = 4.0
     sdr_hdr_rolloff: float = 1.0
     sdr_hdr_exposure: float = 0.0
+    hdr_chroma: float = 0.0
+    hdr_sky_protect: float = 0.0
+    hdr_target: str = 'all'
+    hdr_curve: list = field(default_factory=lambda: [[0.,0.],[1.,1.]])
+    hdr_punch: float = 0.0
+    hdr_brilliance: float = 0.0
+    sdr_hdr_contrast: float = 0.0
+    sdr_hdr_highlights: float = 0.0
+    sdr_hdr_saturation: float = 0.0
+    sdr_hdr_color_safe: bool = False
     temp: float = 0.0           # -1..1  偏暖(+R) / 偏冷(+B)
     tint: float = 0.0           # -1..1  偏品(+R+B) / 偏绿(+G)
     saturation: float = 1.0
@@ -157,6 +167,7 @@ class Params:
     curve: list = field(default_factory=lambda: [[0.0, 0.0], [1.0, 1.0]])
     hsl: list = field(default_factory=lambda: [[0.0, 0.0] for _ in range(8)])
     wb_gain: list = field(default_factory=lambda: [1.0, 1.0, 1.0])
+    tone_balance: dict = field(default_factory=dict)
     output_space: str = 'srgb'
     working_space: str = 'srgb'
     local_edits: list = field(default_factory=list)
@@ -186,6 +197,7 @@ class Params:
         p.meter_mode = p.meter_mode if p.meter_mode in ('legacy','edges') else 'legacy'
         p.scene_hdr=p.scene_hdr is True
         p.hdr_enabled=p.hdr_enabled is True
+        p.sdr_hdr_color_safe=p.sdr_hdr_color_safe is True
         for key,default,lo,hi in (('hdr_strength',1.,0,3),('hdr_start',.5,.1,1),('hdr_softness',.5,.05,2),('hdr_limit',4.,0,6),('sdr_hdr_rolloff',1.,0,1),('sdr_hdr_exposure',0.,-2,2)):
             setattr(p,key,float(np.clip(_num(getattr(p,key),default),lo,hi)))
         for key in ('tone_shadows','tone_highlights','tone_whites','tone_blacks'):
@@ -199,6 +211,10 @@ class Params:
         p.saturation = float(np.clip(_num(p.saturation, 1.0), 0.0, 2.0))
         p.crosstalk = float(np.clip(_num(p.crosstalk, 0.0), 0.0, 1.0))
         p.curve = normalize_curve(p.curve)
+        p.hdr_curve = normalize_curve(p.hdr_curve)
+        p.hdr_target = p.hdr_target if p.hdr_target in ('all','red','green','blue','magenta') else 'all'
+        for key in ('hdr_chroma','hdr_sky_protect','hdr_punch','hdr_brilliance','sdr_hdr_contrast','sdr_hdr_highlights','sdr_hdr_saturation'):
+            setattr(p,key,float(np.clip(_num(getattr(p,key),0),0 if key.startswith('hdr_') else -1,1)))
         rows = p.hsl if isinstance(p.hsl, (list, tuple)) else []
         p.hsl = [[float(np.clip(_num(row[c], 0), -1, 1))
                   if isinstance(row, (list, tuple)) and len(row) > c else 0.0
@@ -218,6 +234,8 @@ class Params:
         if not isinstance(p.wb_gain, (list,tuple)) or len(p.wb_gain) != 3:
             p.wb_gain = [1.,1.,1.]
         p.wb_gain = [float(np.clip(_num(v,1),.125,8)) for v in p.wb_gain]
+        import tone_balance
+        p.tone_balance = tone_balance.normalize(p.tone_balance)
         p.output_space = p.output_space if p.output_space in ('srgb','adobe_rgb','prophoto') else 'srgb'
         p.working_space = p.working_space if p.working_space in ('srgb','prophoto') else 'srgb'
         import local_edits
@@ -489,6 +507,11 @@ def scene_linear(rgb: np.ndarray, p: Params, repair_context=None) -> np.ndarray:
                 # 跨度要按修复后的数据重估，否则会被坏通道的虚高密度带偏
                 span = repair_context['span'] if repair_context is not None else float(np.clip(np.quantile(rel.mean(axis=2), 0.999), 0.6, 3.5))
 
+        if balance := p.tone_balance.get('density'):
+            offset, gain = np.asarray(balance, dtype=np.float32)
+            rel -= offset
+            rel *= gain
+
         # 染料串色校正：密度域左乘 3×3 矩阵。
         # 优先用胶片型号对应的系数（films.py，从厂商光谱数据表推导），
         # 没有型号时才退回强度滑块的经验预设。
@@ -538,6 +561,36 @@ def estimate_wb(rgb: np.ndarray, p: Params, method='gray_world') -> list:
     if gain.min() < .125 or gain.max() > 8:
         raise ValueError('所需校正超过安全范围，请检查片基或通道欠曝')
     return gain.astype(np.float32).tolist()
+
+
+def initial_negative_wb(rgb, p):
+    """Estimate a restrained balance from midtones of a masked color negative."""
+    import metering
+
+    region = metering.region(rgb, p.meter_mode)
+    h, w = region.shape[:2]
+    dy, dx = h // 12, w // 12
+    sampled = region[dy:h - dy:max(1, h // 420), dx:w - dx:max(1, w // 420)]
+    # Estimate on the density response before the output shoulder or clipping.
+    # A clipped blue channel otherwise removes the very samples that show a cast.
+    linear = scene_linear(sampled, replace(p, scene_hdr=True, channel_repair=False))
+    luminance = luma(linear, p.working_space)
+    valid = (linear.min(axis=2) > EPS) & (sampled.min(axis=2) > EPS)
+    if np.count_nonzero(valid) < 128:
+        return [1., 1., 1.]
+
+    low, high = np.quantile(luminance[valid], [.20, .92])
+    midtones = linear[valid & (luminance >= low) & (luminance <= high)]
+    log_rgb = np.log(midtones)
+    chroma = log_rgb[:, [0, 2]] - log_rgb[:, [1]]
+    red, blue = np.median(chroma, axis=0)
+    # Correct a cast shared by most midtones. A cool object or a small area of
+    # sky should not set the balance of the whole frame.
+    cool = (chroma[:, 1] > .04) | ((chroma[:, 0] < -.20) & (chroma[:, 1] > -.08))
+    if np.mean(cool) < .57 or (blue < .085 and red > -.20):
+        return [1., 1., 1.]
+    gains = np.exp(np.clip(-.88 * np.array([min(red, 0.), 0., max(blue, 0.)]), -1.35, .50))
+    return (gains / luma(gains, p.working_space)).tolist()
 
 
 def wb_gain(p):
@@ -591,6 +644,9 @@ def process(rgb: np.ndarray, p: Params, target_space='srgb', repair_context=None
         out=hdr_color.encode(hdr_color.sdr_rendition(linear,p),p.working_space)
         return colorio.convert(np.clip(out,0,1),target_space,p.working_space)
     e = working_linear(rgb,p,repair_context,tone_context,tone_box)
+    if p.tone_balance:
+        import tone_balance
+        e = np.clip(tone_balance.apply(e,p),0,1)
     if p.mode != 'bw_negative':
         e = calibration.apply(e,p.calibration,p.calibration_strength,p.working_space)
 

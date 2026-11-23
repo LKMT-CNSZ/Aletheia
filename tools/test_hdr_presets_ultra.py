@@ -1,4 +1,4 @@
-"""Saved HDR presets, real ISO gain-map JPEG/SDR base and toolbar export."""
+"""Saved HDR presets, legacy ISO codec regression and TIFF-only toolbar export."""
 from pathlib import Path
 import os,sys,tempfile,copy,time,json,threading,io
 os.environ['QT_QPA_PLATFORM']='offscreen'
@@ -97,27 +97,28 @@ with tempfile.TemporaryDirectory(dir=folder) as tmp:
         window.travel(-1);idle();assert window.p==old
     assert window.p==before
     window.hdr_preset_buttons['natural'].click();idle();value=copy.deepcopy(window.p)
-    jf='Ultra HDR JPEG - SDR + Gain Map (*.jpg *.jpeg)'
+    from tiff_formats import export_formats
+    from tiffread import read_tiff_linear
+    formats=export_formats();hf=next(label for label,pair in formats.items() if pair==(True,'deflate'))
     for active in (False,True):
         window.hdr_canvas.active=active
         dest=root/('toolbar-'+str(active)+'.tif')
         try:
-            with patch.object(ui.QFileDialog,'getSaveFileName',return_value=(str(dest),jf)) as dialog:
-                window.export_button.click();idle();assert jf in dialog.call_args.args[3]
+            with patch.object(ui.QFileDialog,'getSaveFileName',return_value=(str(dest),hf)) as dialog:
+                window.export_button.click();idle();assert hf in dialog.call_args.args[3] and 'JPEG' not in dialog.call_args.args[3]
         finally:window.hdr_canvas.active=False
-        dest=dest.with_suffix('.jpg');data=dest.read_bytes();assert api.ultrahdr_check(data)
+        assert hdr_io.tags(dest)[259]==8
         assert window.last_export==str(dest) and window.p==value
         p=model.engine.prepare_params(model.params(value));linear=hdr_color.render(model.engine.STATE['full'],p)
-        hdr,base=hdr_ultrahdr.inputs(linear,p);decoded=api.ultrahdr_decode(data,boost=49).astype(np.float32)
-        assert np.allclose(decoded[32,80,:3],hdr[32,80,:3],atol=.03,rtol=.04)
+        assert np.array_equal(read_tiff_linear(dest),linear)
     # Exporting another format with a JPEG suffix still chooses the TIFF encoder.
-    with patch.object(ui.QFileDialog,'getSaveFileName',return_value=(str(root/'chosen.jpg'),'HDR TIFF - Float32 (*.tif *.tiff)')):
+    with patch.object(ui.QFileDialog,'getSaveFileName',return_value=(str(root/'chosen.jpg'),hf)):
         window.export_button.click();idle()
     assert (root/'chosen.tif').read_bytes()[:2]==b'II' and not (root/'chosen.jpg').exists()
-    with patch.object(ui.QFileDialog,'getSaveFileName',return_value=('',jf)),patch.object(window,'command') as command:
+    with patch.object(ui.QFileDialog,'getSaveFileName',return_value=('',hf)),patch.object(window,'command') as command:
         window.export_dialog();assert not command.called
     window.resize(1280,900);window.tabs.setCurrentIndex(4);app.processEvents()
     window.grab().save(str(folder/'workbench.png'))
     window.loaded=False;window.close();app.processEvents()
 (folder/'results.json').write_text(json.dumps({'status':'pass','codec':api.ultrahdr_version(),'ISO_gainmap':True,'SDR_base_with_ICC':True,'HDR_decode_vs_master':True,'content_capacity':True,'odd_dimensions':True,'srgb_and_prophoto':True,'presets_undo_project_recipe':True,'toolbar_format_routing':True,'device_visual_acceptance':False},indent=2),'utf-8')
-print('PASS three saved HDR presets/undo/projects/recipes; real ISO Ultra HDR JPEG, sRGB base ICC, SDR/HDR decode, content capacity, ProPhoto, odd sizes, cancellation, atomic no-overwrite and toolbar routing')
+print('PASS saved HDR presets/undo/projects/recipes; real ISO Ultra HDR JPEG, sRGB base ICC, SDR/HDR decode, content capacity, ProPhoto, odd sizes, cancellation, atomic no-overwrite and toolbar routing')

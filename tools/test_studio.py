@@ -54,35 +54,39 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build'/'tests',prefix='studio-') as f
         if done==1:fresh.request_pause(job)
     assert worker.execute(fresh,job,pause)=='paused'
     checkpoint=fresh.get_job(job);assert checkpoint['status']=='paused' and len(checkpoint['outputs'])==1
-    output=Path(checkpoint['destination'])/'frame-0001.tif';first_hash=sha256(output);stamp=output.stat().st_mtime_ns
+    assert Path(checkpoint['destination'])==folder/'成品'
+    output=Path(checkpoint['destination'])/checkpoint['outputs']['0']['tiff']['name'];first_hash=sha256(output);stamp=output.stat().st_mtime_ns
     fresh.retry([job]);assert worker.execute(fresh,job)=='completed'
     assert sha256(output)==first_hash and output.stat().st_mtime_ns==stamp
-    manifest=json.loads((output.parent/'manifest.json').read_text('utf-8'));assert len(manifest['frames'])==6
+    assert len(list(output.parent.iterdir()))==6 and all(p.suffix=='.tif' for p in output.parent.iterdir())
     # Independently reproduce a saved frame and compare all uint16 pixels.
     model.open_project(store.materialize(captured,'acceptance'))
     array,p=worker.frame_parameters(captured,2)
     expected=(core.process(array,p)*65535+.5).astype(np.uint16)
-    assert np.array_equal(read_tiff(str(output.parent/'frame-0003.tif')),expected)
-    # Prepared publication interrupted between TIFF and JSON is recoverable.
+    third_name=fresh.get_job(job)['outputs']['2']['tiff']['name']
+    assert np.array_equal(read_tiff(output.parent/third_name),expected)
+    # Prepared publication interrupted before checkpoint is recoverable.
     partial=fresh.enqueue([first],folder/'成品',False)[0]
-    original_publish=worker.publish;calls=[]
-    def interrupted(stage,destination,expected):
-        calls.append(1)
-        if len(calls)==2:raise OSError('simulated interruption after TIFF publication')
-        return original_publish(stage,destination,expected)
-    worker.publish=interrupted
+    original_publish=worker.publish_new
+    def interrupted(stage,destination):
+        original_publish(stage,destination)
+        raise OSError('simulated interruption after TIFF publication')
+    worker.publish_new=interrupted
     try:
         try:worker.execute(fresh,partial)
         except OSError:pass
         else:raise AssertionError('Interruption fixture did not execute')
-    finally:worker.publish=original_publish
+    finally:worker.publish_new=original_publish
     assert fresh.get_job(partial)['status']=='failed'
     fresh.retry([partial]);worker.execute(fresh,partial)
     assert fresh.get_job(partial)['status']=='completed'
     # Altering a completed output stops retry and preserves the altered bytes.
     corrupt=fresh.enqueue([second],folder/'成品',True)[0]
     worker.execute(fresh,corrupt,lambda done,*args:fresh.request_pause(corrupt) if done==1 else None)
-    victim=Path(fresh.get_job(corrupt)['destination'])/'frame-0001.tif';victim.write_bytes(b'user-modified-output')
+    paused=fresh.get_job(corrupt)
+    victim=Path(paused['destination'])/paused['outputs']['0']['tiff']['name']
+    assert victim.name==output.stem+'-2.tif' and sha256(output)==first_hash
+    victim.write_bytes(b'user-modified-output')
     fresh.retry([corrupt])
     try:worker.execute(fresh,corrupt)
     except ValueError as error:assert '修改' in str(error)

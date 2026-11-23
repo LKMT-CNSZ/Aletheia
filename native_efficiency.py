@@ -139,10 +139,12 @@ class PrefetchWorker(QThread):
     def run(self):
         try:
             from loader import load
-            from desktop_model import source_identity
+            from desktop_model import default_working_space, source_identity
             from file_io import io_path
-            spec=(self.asset.get('snapshot') or {}).get('input',{})
-            color=spec.get('color','legacy');space=spec.get('working_space','srgb')
+            snapshot = self.asset.get('snapshot')
+            spec=(snapshot or {}).get('input',{})
+            color=spec.get('color','legacy')
+            space=spec.get('working_space','srgb') if snapshot else default_working_space(self.asset['path'])
             estimate=estimate_decoded_bytes(self.asset['path'])
             if self.cancel.is_set():return
             if not estimate or not self.cache.prefetch_fits(estimate,self.protected_bytes):self.outcome='budget';return

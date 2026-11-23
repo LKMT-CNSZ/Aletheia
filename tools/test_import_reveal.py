@@ -53,8 +53,8 @@ with tempfile.TemporaryDirectory(dir=folder) as tmp,patch.object(reveal,'system_
     w.edit_parameter('exposure',.25,True);idle();assert w.import_reveal.starts==count
     w.open_path(str(sources[-1]));idle();assert not w.import_reveal.active and w.import_reveal.starts==count
     # Unvisited frames start negative; completion develops exactly one thumbnail.
-    strip_path=root/'strip.tif';write_tiff_rgb16(strip_path,np.tile(transmission[...,None]*np.array([1,.7,.4]),(1,2,1)),with_icc=False)
-    manual={'rotation':0,'frames':[{'id':'a','box':[0,0,120,80]},{'id':'b','box':[120,0,240,80]}]}
+    strip_path=root/'strip.tif';write_tiff_rgb16(strip_path,np.tile(transmission[...,None]*np.array([1,.7,.4]),(1,3,1)),with_icc=False)
+    manual={'rotation':0,'frames':[{'id':'a','box':[0,0,120,80]},{'id':'b','box':[120,0,240,80]},{'id':'c','box':[240,0,360,80]}]}
     result=ui.model.open_image(strip_path,input_mode='strip',manual=manual);result['_new_import']=True;w.on_opened(result);idle()
     import io
     from PIL import Image
@@ -77,6 +77,53 @@ with tempfile.TemporaryDirectory(dir=folder) as tmp,patch.object(reveal,'system_
     roll_project=root/'roll.filmproj';ui.model.save_project(roll_project,w.p,w.project_options())
     w.open_project_path(str(roll_project));idle();assert w.import_reveal.starts==count and not w.import_reveal.active
     w.full_resolution=False;w.canvas.fit_mode=True
+
+    # An existing profile only has completion hashes from before the fix.
+    w.developed_frames={w.frame_reveal_key(i,legacy=True) for i in (0,1)}
+    w.build_frames(w.frame_thumbs)
+    assert all(w.frame_reveal_key(i) in w.developed_frames for i in (0,1))
+    unchanged_key=w.frame_reveal_key(1)
+    changed_key=w.frame_reveal_key(0)
+
+    def expected_icon(jpeg):
+        from native_widgets import monitor_image
+        pix=QPixmap();pix.loadFromData(jpeg)
+        display=QPixmap.fromImage(monitor_image(pix.toImage(),w.monitor_profile))
+        return ui.photo_icon(display).pixmap(140,95).toImage()
+
+    def shown_thumb(index):
+        return w.frames.item(index).icon().pixmap(140,95).toImage()
+
+    # Adjust a developed frame other than the one currently in the editor.
+    # The new thumbnail must use its new positive render. The never-viewed
+    # frame to its right stays masked, and applying geometry does not animate.
+    w.open_frames();idle();dialog=w.frame_dialog
+    dialog.frames.setCurrentRow(0);dialog.set_input_angle(1.5);dialog.apply_result();idle()
+    assert w.import_reveal.starts==count and w.info['strip']['index']==1
+    assert w.frame_reveal_key(1)==unchanged_key
+    assert w.frame_reveal_key(0)!=changed_key and w.frame_reveal_key(0) in w.developed_frames
+    assert shown_thumb(0)==expected_icon(w.frame_thumbs[0])
+    assert shown_thumb(2)==expected_icon(ui.model.original_thumbnails()[2])
+    assert not w.frame_is_developed(2)
+    edited_project=root/'reframed.filmproj';w.save_project_to(str(edited_project));idle()
+    w.open_project_path(str(edited_project));idle()
+    assert shown_thumb(0)==expected_icon(w.frame_thumbs[0]) and not w.frame_is_developed(2)
+    w.go_frame(0);idle();assert w.import_reveal.active and w.import_reveal.starts==count+1
+    w.import_reveal.tick(1)
+
+    # Recover unchanged positives from an rc8 profile that had already
+    # switched to manual frames before updating and lost their thumbnails.
+    w.open_path(str(ROOT/'samples'/'pro-strip-demo.tif'));idle();w.import_reveal.tick(1)
+    w.go_frame(1);idle();w.import_reveal.tick(1)
+    old_auto={w.frame_reveal_key(i,legacy=True) for i in (0,1)}
+    previous=ui.model.layout_editor()
+    rows=previous['frames'];rows[1]['angle']=.25
+    prior_edit=ui.model.reframe({'mode':'strip','manual':{'rotation':previous['rotation'],'frames':rows}},w.p)
+    w.developed_frames=old_auto
+    w.on_opened(prior_edit);idle();w.import_reveal.tick(1)
+    assert shown_thumb(0)==expected_icon(w.frame_thumbs[0]) and w.frame_is_developed(0)
+    assert shown_thumb(2)==expected_icon(ui.model.original_thumbnails()[2]) and not w.frame_is_developed(2)
+
     # Original frame and transformed target have identical flip/crop coordinates.
     result=ui.model.open_image(sources[0]);result['params'].update(crop=[.1,.1,.9,.9],flip=True,rotation=90);result['_new_import']=True
     w.developed_frames.clear();w.settings.setValue('importRevealSeen',[]);w.on_opened(result);idle();assert w.import_reveal.active
@@ -137,4 +184,4 @@ with tempfile.TemporaryDirectory(dir=folder) as tmp,patch.object(reveal,'system_
     w=ui.MainWindow(root/'profile');w.show_error=errors.append
     w.open_library_asset(identifier);idle();assert w.import_reveal.starts==0 and not w.import_reveal.active
     w.loaded=False;w.close();app.processEvents()
-print('PASS negative-to-positive thumbnail completion, every distinct frame switch replays including developed/100% frames, same-frame click and grading do not restart, edit/library/project/session reopen suppression, SDR/HDR and preferences')
+print('PASS negative-to-positive thumbnail completion, single-frame layout edits and legacy completion migration, repeated frame changes, 100% views, project reopen, SDR/HDR and animation preferences')

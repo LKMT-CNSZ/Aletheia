@@ -3,6 +3,8 @@ from pathlib import Path
 import os
 import tempfile
 
+APP_NAME = 'Aletheia'
+
 def user_root():
     return Path(os.environ.get('LOCALAPPDATA') or (Path.home()/'AppData'/'Local'))/'FilmInvertNative'
 

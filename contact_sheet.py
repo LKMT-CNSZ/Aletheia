@@ -3,6 +3,7 @@ from pathlib import Path
 import json,os,shutil,tempfile,uuid
 import numpy as np
 from PIL import Image,ImageDraw,ImageFont
+from app_paths import APP_NAME
 
 def export(folder,snapshot,cancel=None,progress=lambda *a:None):
     import desktop_model as model,colorio,core,studio_worker
@@ -19,7 +20,7 @@ def export(folder,snapshot,cancel=None,progress=lambda *a:None):
             if cancel is not None and cancel.is_set():raise ValueError('已取消联系表；未发布输出')
             if i%20==0:
                 page=Image.new('RGB',(1600,1900),'white');draw=ImageDraw.Draw(page)
-                draw.text((30,18),'FilmInvert · sRGB · '+Path(snapshot['source']['path']).name[:70],font=font,fill='black')
+                draw.text((30,18),f'{APP_NAME} · sRGB · '+Path(snapshot['source']['path']).name[:70],font=font,fill='black')
             array,p=studio_worker.frame_parameters(snapshot,i)
             out=core.process(model.engine.downscale(array,600),p,'srgb')
             image=Image.fromarray((np.clip(out,0,1)*255+.5).astype(np.uint8));image.thumbnail((370,300),Image.Resampling.LANCZOS)

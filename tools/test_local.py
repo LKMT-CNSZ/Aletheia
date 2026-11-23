@@ -61,7 +61,7 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build/tests',prefix='local-') as tmp:
  assert np.array_equal(core.process(lin,model.params(p),'prophoto'),expected)
  dest=folder/'result.tif';model.export_image(dest,p)
  assert np.array_equal(read_tiff(str(dest)),(np.clip(expected,0,1)*65535+.5).astype(np.uint16))
- assert json.loads(Path(str(dest)+'.json').read_text('utf-8'))['version']==6
+ assert model.recipe(p)['version']==6
  saved=folder/'local.filmproj';model.save_project(saved,p);assert model.read_project(saved)['version']==8
  restored=model.open_project(saved);assert restored['params']['local_edits']==le.normalize(p['local_edits'])
  assert np.array_equal(core.process(model.engine.STATE['full'],model.params(restored['params']),'prophoto'),expected)
@@ -81,7 +81,10 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build/tests',prefix='local-') as tmp:
   fp=model.params(snapshot['frames'].get(str(i),snapshot['roll_params']));arr=model.engine.STATE['native_loaded'].linear[:,i*151:(i+1)*151]
   expected_frames[i]=(np.clip(core.process(arr,fp,fp.output_space),0,1)*65535+.5).astype(np.uint16)
  assert studio_worker.execute(store,job)=='completed'
- for i in range(2):assert np.array_equal(read_tiff(str(Path(store.get_job(job)['destination'])/f'frame-{i+1:04d}.tif')),expected_frames[i])
+ finished=store.get_job(job);destination=Path(finished['destination'])
+ for i in range(2):
+  name=finished['outputs'][str(i)]['tiff']['name']
+  assert np.array_equal(read_tiff(destination/name),expected_frames[i])
  # Changing source ROI clears affected local edits; layout undo restores them.
  changed=copy.deepcopy(manual);changed['frames'][0]['box']=[1,0,151,101]
  result=model.reframe({'mode':'strip','manual':changed},back)

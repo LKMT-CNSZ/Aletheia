@@ -62,7 +62,8 @@ def candidates(root,current,scope=None):
             old=Path(item['InstallLocation']).resolve();v=item['DisplayVersion']
             if old==root or old.is_relative_to(root) or root.is_relative_to(old) or version(v)>=version(current):continue
             if scope and not old.is_relative_to(Path(scope).resolve()):continue
-            if item['key']!='FilmInvertNative.Stable.'+v+'_is1' or not item['DisplayName'].startswith('FilmInvert Native '):continue
+            if item['key']!='FilmInvertNative.Stable.'+v+'_is1':continue
+            if not item['DisplayName'].startswith(('FilmInvert Native ', 'Aletheia ')):continue
             uninstaller=old/'uninstall/unins000.exe'
             if item['UninstallString'].strip().strip('"').casefold()!=str(uninstaller).casefold():continue
             if uninstaller.is_symlink() or not uninstaller.is_file():continue

@@ -41,7 +41,7 @@ EN = {'\n{0} 星 · ': '\n{0} stars · ',
                                                                                    'runtime and application '
                                                                                    'files are distributed '
                                                                                    'separately.',
- 'FilmInvert 工程 (*.filmproj)': 'FilmInvert projects (*.filmproj)',
+ '{0} 工程 (*.filmproj)': '{0} projects (*.filmproj)',
  'ICC 超过 4 MB': 'ICC profile exceeds 4 MB',
  'ICC 配置 (*.icc *.icm)': 'ICC profiles (*.icc *.icm)',
  'JSON 校正配置 (*.json)': 'JSON correction profiles (*.json)',
@@ -148,7 +148,7 @@ EN = {'\n{0} 星 · ': '\n{0} stars · ',
  '关于': 'About',
  '关闭': 'Close',
  '关闭原图缓存': 'Disable original cache',
- '关闭后，切回已修帧时恢复它的独立参数。': 'When disabled, returning to an edited frame restores its own parameters.',
+ '只对没有保存调色的帧沿用当前参数。切回已编辑的帧时恢复它自己的参数。': 'Carry adjustments only to frames without a saved edit. Edited frames keep their own settings.',
  '关闭网格': 'No grid',
  '再点击色卡外边界右下角。': 'Now click the bottom-right outer chart corner.',
  '分组': 'Group',
@@ -1214,7 +1214,7 @@ EN.update({
 
 EN.update({'当前屏幕未开启 Windows HDR；普通修片和 float32 TIFF 导出仍可使用。':'Windows HDR is not enabled on this display. SDR editing and float32 TIFF export remain available.'})
 
-EN['FilmInvert Native {0} 功能预览版\n照片库 · 参数快照队列 · 片边辅助 · 色卡标定\n官方 Python 运行时与应用文件分开分发。']='FilmInvert Native {0} — Feature preview\nPhoto library · Snapshot queue · Film edges · Chart calibration\nOfficial Python runtime and application sources are distributed separately.'
+EN['{0} {1} 正式版\n照片库 · 参数快照队列 · 片边辅助 · 色卡标定\n官方 Python 运行时与应用文件分开分发。']='{0} {1} — Stable release\nPhoto library · Snapshot queue · Film edges · Chart calibration\nOfficial Python runtime and application sources are distributed separately.'
 
 EN['HDR 屏幕预览（实验）']='HDR display preview (experimental)'
 
@@ -1248,6 +1248,63 @@ EN.update({
 '请先在 Windows「设置 → 系统 → 显示 → HDR」中，为软件所在的显示器开启「使用 HDR」，再返回软件重试。\n\n如果没有 HDR 开关，请检查显示器支持、连接方式及显卡驱动；多屏请确认窗口位于 HDR 显示器上。':'In Windows Settings > System > Display > HDR, turn on Use HDR for the display containing this app, then try again.\n\nIf no HDR switch is available, check display support, the connection and graphics drivers. With multiple monitors, place the app on the HDR display.',
 '当前无法建立 HDR 显示。请先确认 Windows「设置 → 系统 → 显示 → HDR」已开启「使用 HDR」，再检查显卡驱动和显示器连接。\n\n如果系统 HDR 已开启，此错误可能来自显示设备或驱动兼容性，请保留下方详细信息。':'HDR presentation could not be initialized. Check Use HDR in Windows Settings > System > Display > HDR, then check graphics drivers and the display connection.\n\nIf Windows HDR is already on, a display or driver compatibility issue may be involved. Keep the details below.'})
 EN['首次查看显影动画']='Reveal on first viewing'
+EN['对数纵轴']='Logarithmic height'
+EN.update({'红色':'Red','绿色':'Green','蓝色':'Blue','品红':'Magenta'})
 EN['导出中可选 Ultra HDR JPEG：内含 sRGB 底图与 ISO 增益图；JPEG 有损，HDR 显示取决于查看器支持。']='Choose Ultra HDR JPEG in Export: sRGB base plus ISO gain map. JPEG is lossy; HDR viewing requires a compatible viewer.'
 
 EN.update({'自然': 'Natural', '通透': 'Clear', '柔和': 'Soft', '预设仅修改 HDR 与 SDR 版本参数，可撤销并继续微调；不恢复已丢失的高光。': 'Presets change only HDR and SDR rendition settings. Undo or fine-tune them; clipped highlights cannot be recovered.', 'HDR 调色进入工程与 HDR TIFF/JXR/Ultra HDR JPEG 导出；屏幕亮度适配独立保存在本机。': 'HDR grading is saved in projects and HDR TIFF/JXR/Ultra HDR JPEG exports. Display adaptation stays on this computer.', '已保存 Ultra HDR JPEG：': 'Ultra HDR JPEG saved: '})
+
+EN.update({'选择性 HDR': 'Selective HDR', '彩色高光增强': 'Colored highlight boost', '蓝色区域保护': 'Blue area protection', '增强颜色范围': 'Enhancement color range', '全部颜色': 'All colors', '蓝色保护按颜色判断，也影响蓝色物体；局部画笔与渐变可进一步控制受光区域。旧工程为兼容模式，应用预设可启用彩色增强。': 'Blue protection uses color, so it also affects blue objects. Use local brushes and gradients to shape lit areas. Existing edits retain legacy grading; apply a preset to enable colored highlights.', 'HDR 扩展曲线': 'Extended HDR curve', '重置 HDR 曲线': 'Reset HDR curve', 'SDR 对比度': 'SDR contrast', 'SDR 高光 EV': 'SDR highlights EV', 'SDR 高光饱和度': 'SDR highlight saturation', 'SDR 参数仅影响 SDR 预览、SDR 导出及 Ultra HDR 底图，不改变 HDR 主图。': 'SDR settings affect SDR previews, exports and the Ultra HDR base only. The HDR master is unchanged.', '当前为 SDR 显示；HDR 调色未启用。': 'SDR display; HDR grading is disabled.', '真实 HDR 显示': 'Native HDR display', 'SDR 对照显示': 'SDR proof display', '当前为 SDR 显示': 'SDR display', ' · HDR 调色已启用': ' · HDR grading enabled', ' · HDR 调色未启用': ' · HDR grading disabled', '\nRGB 峰值 {0:+.2f} EV · HDR 像素 {1:.1f}%': '\nRGB peak {0:+.2f} EV · HDR pixels {1:.1f}%', '\n屏幕余量 +{0:.1f} EV': '\nDisplay headroom +{0:.1f} EV', 'HDR 扩展曲线：横轴输入，纵轴输出，白点以上按 EV 标注': 'Extended HDR curve: input horizontal, output vertical; EV marks above white', 'W = SDR 白点 · 曲线在 HDR 限幅前生效': 'W = SDR white · Curve applied before HDR limiting', '扩展 HDR 调色需要配方版本 8': 'Extended HDR grading requires recipe version 8', '扩展 HDR 调色需要工程版本 10': 'Extended HDR grading requires project version 10'})
+
+EN.update({'SDR / HDR 分区 RGB 直方图': 'SDR / HDR split RGB histogram', '左侧 SDR：黑至参考白；右侧 HDR：参考白以上 +1 至 +6 EV。RGB 为 SDR 压缩前的 HDR 主图统计，纵轴为对数。超出 +6 EV 的值计入末格。屏幕标线仅在真实 HDR 显示时出现。': 'Left SDR: black to reference white. Right HDR: +1 to +6 EV above white. RGB statistics use the HDR master before SDR mapping; vertical counts are logarithmic. Values above +6 EV are included in the last bin. Display limits appear only during native HDR presentation.', '正在计算 HDR 直方图…': 'Computing HDR histogram…', 'HDR 主图统计 · 当前 SDR 显示': 'HDR master · SDR display', 'HDR 主图统计 · 屏幕余量 +{0:.1f} EV': 'HDR master · Display headroom +{0:.1f} EV', ' · 主画布 HDR · 直方图为 HDR 主图统计': ' · HDR canvas · Histogram shows the HDR master'})
+
+EN.update({'明亮 HDR': 'Bright HDR', '极致 HDR': 'Impact HDR', 'HDR 冲击力': 'HDR punch', '高光辉度': 'Highlight brilliance', '明亮 / 极致预设明显提升受光区域。高光辉度使强烈彩色高光向白光过渡；旧工程保持原效果。实际亮度取决于屏幕可用余量。': 'Bright / Impact presets raise lit areas substantially. Brilliance moves intense colored highlights toward white light. Existing edits retain their appearance. Actual brightness depends on display headroom.', '强烈 HDR 调色需要配方版本 9': 'Impact HDR grading requires recipe version 9', '强烈 HDR 调色需要工程版本 11': 'Impact HDR grading requires project version 11'})
+
+EN.update({'RGB 直方图': 'RGB histogram', '直方图 ▾': 'Histogram ▾', '线性纵轴': 'Linear height', '正在计算直方图…': 'Computing histogram…', 'RGB 彩色叠加直方图。开启 HDR 后，左侧为 SDR，右侧为参考白以上的 HDR，横轴按 EV 分档。底部浅色条标出屏幕可用范围。点击标题或右键切换纵轴；悬停图表查看范围。': 'Overlaid RGB histogram. With HDR enabled, SDR is on the left and above-white HDR is on the right in EV stops. The light strip marks available display headroom. Click the title or right-click to change vertical scaling; hover to inspect the range.', 'HDR 范围 +0 至 +{0} EV · HDR 像素 {1:.1f}%': 'HDR range +0 to +{0} EV · HDR pixels {1:.1f}%', '\n当前为 SDR 显示': '\nSDR display', 'SDR · {0:.0f}%': 'SDR · {0:.0f}%', 'HDR · +{0:.2f} EV': 'HDR · +{0:.2f} EV', 'SDR · {0:.0f}': 'SDR · {0:.0f}'})
+
+EN['直方图']='Histogram'
+
+EN.update({'明亮（保色）': 'Bright (color-safe)', '高光增强': 'Highlight lift', '高光淡化（创意）': 'Highlight fading (creative)', '保色预设关闭创意冲击力和高光淡化，保留颜色比例并适度提升亮部。已有工程保持原参数，重新应用预设即可切换。': 'Color-safe presets reset creative punch and highlight fading, retain RGB ratios and raise highlights moderately. Existing projects keep their settings; reapply a preset to switch.', 'SDR 保色映射': 'Color-safe SDR mapping', 'SDR 保色映射需要配方版本 10': 'Color-safe SDR mapping requires recipe version 10', 'SDR 保色映射需要工程版本 12': 'Color-safe SDR mapping requires project version 12'})
+
+EN.update({'HDR 调色进入工程与 HDR TIFF/Ultra HDR JPEG 导出；屏幕亮度适配独立保存在本机。': 'HDR grading is saved in projects and HDR TIFF/Ultra HDR JPEG exports. Display adaptation stays on this computer.', '查看和分享可选 Ultra HDR JPEG；继续修片可选 HDR TIFF 浮点母版，文件较大。HDR JPEG 的显示取决于查看器支持。': 'Use Ultra HDR JPEG for viewing and sharing, or the larger floating-point HDR TIFF master for further editing. HDR JPEG viewing requires a compatible viewer.', '正在导出 Ultra HDR JPEG…': 'Exporting Ultra HDR JPEG…'})
+
+EN.update({'请选择 TIFF 导出格式。': 'Choose a TIFF export format.', 'SDR TIFF - 16位 · 无损压缩 ZIP (*.tif *.tiff)': 'SDR TIFF - 16bit - Lossless ZIP (*.tif *.tiff)', 'SDR TIFF - 16位 · 不压缩 (*.tif *.tiff)': 'SDR TIFF - 16bit - Uncompressed (*.tif *.tiff)', 'HDR TIFF - Float32 · 无损压缩 ZIP (*.tif *.tiff)': 'HDR TIFF - Float32 - Lossless ZIP (*.tif *.tiff)', 'HDR TIFF - Float32 · 不压缩 (*.tif *.tiff)': 'HDR TIFF - Float32 - Uncompressed (*.tif *.tiff)', 'HDR 调色保存在工程及 HDR TIFF 中；屏幕适配独立保存在本机。': 'HDR grading is saved in projects and HDR TIFF. Display adaptation stays on this computer.', 'TIFF 导出可选无损压缩 ZIP 或不压缩。HDR 保留 32 位浮点亮部；压缩率取决于图像内容。': 'Choose lossless ZIP or uncompressed TIFF. HDR retains float32 highlights; the size reduction depends on image content.', 'SDR 参数仅影响 SDR 预览与 SDR TIFF，不改变 HDR 主图。': 'SDR settings affect the SDR preview and SDR TIFF only, not the HDR master.'})
+
+EN.update({
+    '导出进度': 'Export progress',
+    '%v / %m 帧': '%v / %m frames',
+    '正在写入 TIFF…': 'Writing TIFF…',
+    '16 位 TIFF 已保存：': '16-bit TIFF saved: ',
+})
+
+EN.update({
+    '同时导出 JPEG': 'Also export JPEG',
+    '已保存 TIFF 和 JPEG：': 'TIFF and JPEG saved: ',
+    '已保存 HDR TIFF 和 JPEG：': 'HDR TIFF and JPEG saved: ',
+})
+
+EN['用「对照 SDR 输出」查看下方 SDR 参数。亮部强度只作用于超过亮部起点的区域。']='Use Compare SDR output to see the controls below. Highlight strength affects areas above the highlight threshold.'
+
+EN.update({
+    '校正负片蓝偏': 'Correct negative blue cast',
+    '校正负片蓝偏…': 'Correct negative blue cast…',
+    '正在校正负片蓝偏…': 'Correcting negative blue cast…',
+    '将按原片重新估算彩色负片的片基和白平衡，保留裁切、曝光及局部编辑。作用于选中的参与项，未选中时作用于当前筛选中的参与项。可通过批次撤销恢复。': 'Re-estimate film base and white balance from the originals while retaining crop, exposure and local edits. Applies to selected participating photos, or the current filtered set when no rows are selected. This operation can be undone from batch history.',
+})
+
+EN.update({
+    '自动分区校色': 'Auto tone balance',
+    '自动分区校色…': 'Auto shadow and highlight balance…',
+    '批量分区校色': 'Batch tone balance',
+    '批量校正蓝偏': 'Batch blue cast correction',
+    '导入校色设置无效': 'Invalid import color correction setting',
+    '导入校色需要配方版本 12': 'Import color correction requires recipe version 12',
+    '导入校色需要工程版本 14': 'Import color correction requires project version 14',
+    '清除分区校色': 'Clear tone balance',
+    '点暗部中性灰': 'Sample neutral shadow',
+    '点亮部中性灰': 'Sample neutral highlight',
+    '暗部和亮部偏色不同时，可在「取样」中分别点有细节的中性灰。': 'If shadows and highlights have different casts, sample a textured neutral in each range.',
+    '在画布上点击有细节的中性灰，避开纯黑、过曝和有颜色的物体': 'Click a textured neutral on the canvas. Avoid black, clipped highlights and colored objects.',
+    '正在估算暗部和亮部偏色…': 'Estimating shadow and highlight casts…',
+    '将重新估算彩色负片的片基、白平衡和分区校色，保留裁切、曝光及局部编辑。作用于选中的参与项，未选中时作用于当前筛选中的参与项。可通过批次撤销恢复。': 'Re-estimate film base, white balance and tonal color balance while retaining crop, exposure and local edits. Applies to selected participating photos, or the current filtered set when no rows are selected. Undo from batch history.',
+})

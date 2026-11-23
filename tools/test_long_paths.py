@@ -34,8 +34,8 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build/tests',prefix='paths-') as temp
     project=deep/'document.filmproj';model.save_project(project,p)
     assert model.open_project(project)['params']==p
     output=deep/'direct.tif';model.export_image(output,p)
-    assert read_tiff(output).dtype==np.uint16 and io_path(str(output)+'.json').is_file()
-    # Real subprocess, >330-character profile and >400-character destination.
+    assert read_tiff(output).dtype==np.uint16 and not io_path(str(output)+'.json').exists()
+    # Real subprocess, >330-character profile and deeply nested output.
     profile=deep/'profile';store=StudioStore(profile);asset=store.capture(snapshot)
     job=store.enqueue([asset],deep/'队列 成品',False)[0]
     result=subprocess.run([sys.executable,'-I','-X','utf8',str(ROOT/'studio_worker.py'),
@@ -44,39 +44,37 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build/tests',prefix='paths-') as temp
     saved=store.get_job(job);assert saved['status']=='completed',saved
     directory=io_path(saved['destination']);record=saved['outputs']['0']
     assert read_tiff(directory/record['tiff']['name']).dtype==np.uint16
-    assert json.loads((directory/record['recipe']['name']).read_text('utf-8'))['params']==p
-    assert (directory/'manifest.json').is_file()
+    assert record['params']==p and [path.suffix for path in directory.iterdir()]==['.tif']
     assert not list(directory.glob('.pending-*')) and not list(directory.glob('*.part'))
     # Failure before intent leaves no orphan; existing output and snapshot survive.
-    failed=store.enqueue([asset],deep/'失败 恢复',False)[0];write=model.write_json
-    def fail_recipe(path,data):
-        if str(path).endswith('.tif.json'):raise OSError('injected recipe IO failure')
-        return write(path,data)
-    model.write_json=fail_recipe
+    failed=store.enqueue([asset],deep/'失败 恢复',False)[0];export=model.export_image
+    def fail_export(path,*args,**kwargs):
+        io_path(path).write_bytes(b'partial TIFF')
+        raise OSError('injected TIFF IO failure')
+    model.export_image=fail_export
     try:
         try:worker.execute(store,failed)
         except OSError:pass
         else:raise AssertionError('IO failure not exercised')
-    finally:model.write_json=write
+    finally:model.export_image=export
     failed_dir=io_path(store.get_job(failed)['destination'])
     assert store.get_job(failed)['status']=='failed'
     assert not list(failed_dir.iterdir())
     store.retry([failed]);assert worker.execute(store,failed)=='completed'
     # Interrupted publication retains durable stages; retry never rewrites TIFF.
-    partial=store.enqueue([asset],deep/'中断 恢复',False)[0];publish=worker.publish;calls=[]
-    def interrupt(stage,dest,digest):
-        calls.append(1)
-        if len(calls)==2:raise OSError('interruption between TIFF and recipe')
-        publish(stage,dest,digest)
-    worker.publish=interrupt
+    partial=store.enqueue([asset],deep/'中断 恢复',False)[0];publish=worker.publish_new
+    def interrupt(stage,dest):
+        publish(stage,dest)
+        raise OSError('interruption after TIFF publication before checkpoint')
+    worker.publish_new=interrupt
     try:
         try:worker.execute(store,partial)
         except OSError:pass
         else:raise AssertionError('publication interruption not exercised')
-    finally:worker.publish=publish
+    finally:worker.publish_new=publish
     saved=store.get_job(partial);directory=io_path(saved['destination']);record=saved['outputs']['0']
     tiff=directory/record['tiff']['name'];stamp=tiff.stat().st_mtime_ns;digest=sha256(tiff)
-    assert (directory/record['recipe']['stage']).is_file()
+    assert record['state']=='prepared' and 'recipe' not in record
     store.retry([partial]);assert worker.execute(store,partial)=='completed'
     assert tiff.stat().st_mtime_ns==stamp and sha256(tiff)==digest
     assert not list(directory.glob('.pending-*'))

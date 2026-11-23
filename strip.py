@@ -3,11 +3,8 @@
 扫描仪一次扫一整条 135 胶片，画面里通常并排 1~2 条，每条 6 帧左右。
 这个模块负责：找出胶片条 → 找出帧间隙 → 切成单帧 → 给出旋转方向。
 
-判据
-----
-* **列方向**：胶片条有橙色片基，比条间黑隔亮得多 → 用列均值找黑隔
-* **行方向**：帧间隙是未曝光的片基，是整条里最亮的地方 → 用行均值的峰值
-* **片基**：直接取帧间隙的颜色，这是物理上真正的未曝光区，比自动估计准
+在横向和纵向查找跨越胶片宽度的清晰间隙，以实际间隙边缘切帧。
+片基取自同一条胶片上已验证的间隙内部。
 """
 
 from __future__ import annotations
@@ -58,13 +55,68 @@ def manual_layout(img, value):
     import core
     value=normalize_manual(value,img.shape)
     strips=[];bounds=[];bases=[]
+    single_frame = len(value['frames']) == 1
     for row in value['frames']:
         x0,y0,x1,y1=row['box']
         strips.append((x0,x1));bounds.append([(y0,y1)])
-        bases.append(row.get('base') or core.auto_base(img[y0:y1,x0:x1]))
-    layout=StripLayout(strips,[[] for _ in strips],bases,bounds,value['rotation'])
+        base = row.get('base')
+        if base is None and single_frame:
+            base = film_base_from_edges(img)
+        bases.append(base if base is not None else core.auto_base(img[y0:y1,x0:x1]))
+    layout=StripLayout(strips,[[] for _ in strips],bases,bounds,value['rotation'],kind='manual')
     layout.angles=[row.get('angle',0.) for row in value['frames']]
     return layout
+
+
+def film_base_from_edges(img):
+    """Find consistent, unclipped orange film on opposite edges of a scan."""
+    step = max(1, math.ceil(max(img.shape[:2]) / 1200))
+    small = img[::step, ::step]
+    if min(small.shape[:2]) < 32:
+        return None
+
+    def edge_sample(band):
+        # Backlight through the sprocket holes is bright but lacks the orange
+        # mask. Exclude endpoint samples, including films with clipped red.
+        red, green, blue = np.moveaxis(band, 2, 0)
+        mask = ((blue > .01) & (red < .995) &
+                (green < .78 * red) & (blue < .72 * green))
+        pixels = band[mask]
+        if len(pixels) < .12 * mask.size:
+            return None
+        # Compare the brighter film on both rails. Darker image content can
+        # dominate an edge band when the film was photographed at an angle.
+        bright = pixels[pixels[:, 0] >= np.quantile(pixels[:, 0], .70)]
+        chroma = bright[:, 1:] / bright[:, :1]
+        typical = np.median(chroma, axis=0)
+        consistent = np.max(np.abs(chroma / typical - 1), axis=1) <= .20
+        bright = bright[consistent]
+        support = len(bright) / mask.size
+        if support < .025:
+            return None
+        # The brighter portion of this color is the least exposed film.
+        brightest = bright[bright[:, 0] >= np.quantile(bright[:, 0], 2 / 3)]
+        return support, typical, np.median(brightest, axis=0)
+
+    h, w = small.shape[:2]
+    interior_red = small[h // 4:h - h // 4, w // 4:w - w // 4, 0]
+    min_red = 1.025 * np.median(interior_red)
+    candidates = []
+    for orientation in (small, small.transpose(1, 0, 2)):
+        h, w = orientation.shape[:2]
+        middle = orientation[:, w // 16:w - w // 16]
+        first = edge_sample(middle[:h // 8])
+        last = edge_sample(middle[-(h // 8):])
+        if first is None or last is None:
+            continue
+        if np.max(np.abs(np.log(first[1] / last[1]))) > .25:
+            continue
+        base = max(first[2], last[2], key=lambda rgb: rgb[0])
+        if base[0] > min_red:
+            candidates.append((first[0] * last[0], base))
+    if not candidates:
+        return None
+    return max(candidates, key=lambda candidate: candidate[0])[1].tolist()
 
 
 @dataclass
@@ -76,6 +128,7 @@ class StripLayout:
     rotation: int = 0                  # 0 / 90 / 180 / 270
     kind: str = 'strip'
     angles: list | None = None
+    horizontal: bool = False            # 条带和间隙坐标是否在转置视图中
 
     @property
     def frame_count(self) -> int:
@@ -243,7 +296,7 @@ def _credible_strip(img, layout):
     return gap_evidence>0
 
 
-def detect_layout(img, min_strip_width=200, min_gap=20, pad=45):
+def detect_layout_previous(img, min_strip_width=200, min_gap=20, pad=45):
     """Conservative detection with bounded analysis memory and source-pixel boxes.
 
     Single camera reproductions can contain clear film and partial neighbours;
@@ -275,6 +328,164 @@ def detect_layout(img, min_strip_width=200, min_gap=20, pad=45):
     return StripLayout([(0,w)],[[]],[core.auto_base(small)],[[(0,h)]],0,'single')
 
 
+def analysis_view(img, layout):
+    """Return the scan with frame progression along rows."""
+    return img.swapaxes(0, 1) if layout.horizontal else img
+
+
+def _strip_ranges(small, min_width):
+    """Locate continuous dark holder columns across the strip direction."""
+    height, width = small.shape[:2]
+    light = np.mean(small, axis=2)
+    columns = np.quantile(light, .85, axis=0)
+    low, high = np.quantile(columns, (.05, .90))
+    threshold = min(low + .28 * (high - low), .36 * high)
+    holder = np.mean(light < threshold, axis=0) >= .83
+    borders = [(-1, -1), *_runs(holder, max(2, round(width * .002))), (width, width)]
+    return [(a + 1, b) for (_, a), (b, _) in zip(borders, borders[1:])
+            if min_width <= b - a - 1 <= height * 1.4]
+
+
+def _strip_frames(view, left, right):
+    """Check transverse film transmission using bounded native-resolution probes."""
+    height = view.shape[0]
+    width = right - left
+    stride = max(1, math.ceil(height / 20000))
+    columns = np.linspace(left + .15 * width, right - .15 * width - 1, min(96, width), dtype=int)
+    probe = view[::stride, columns]
+    # High quantiles across rows remain useful for narrow gaps. The median
+    # across columns prevents a bright subject or dust speck from setting them.
+    median = np.median(probe, axis=1)
+    reference = np.maximum(np.quantile(median, .998, axis=0), 1e-6)
+    relative = np.min(probe / reference, axis=2)
+    content = np.flatnonzero(np.mean(relative > .19, axis=1) >= .52)
+    if not len(content):
+        return None
+    top, bottom = int(content[0]), int(content[-1]) + 1
+
+    clear = np.mean(relative > .82, axis=1) >= .80
+    # Bridge small gaps caused by dust inside a clear run.
+    for a, b in _runs(~clear):
+        if a > top and b + 1 < bottom and b - a + 1 <= max(1, round(.0015 * width / stride)):
+            clear[a:b + 1] = True
+    seams = _runs(clear, 2)
+    if not seams:
+        return None
+
+    # A clear leader touching either edge can bound the roll, but cannot
+    # supply evidence of two frames.
+    inner = []
+    for a, b in seams:
+        if a <= top + 1:
+            top = max(top, b + 1)
+        elif b >= bottom - 2:
+            bottom = min(bottom, a)
+        else:
+            inner.append((a, b))
+    if not inner or bottom <= top:
+        return None
+
+    width_at_probe = width / stride
+    centers = [(a + b) / 2 for a, b in inner]
+    intervals = np.diff(centers)
+    plausible = intervals[intervals >= .42 * width_at_probe]
+    pitch = float(np.median(plausible)) if len(plausible) else (bottom - top) / (len(inner) + 1)
+    if not .40 * width_at_probe <= pitch <= 4.25 * width_at_probe:
+        return None
+    internal = [(a, b) for a, b in inner if (b - a + 1) <= max(3, pitch * .15)]
+    if not internal:
+        return None
+    # A lone line across an otherwise borderless picture is ambiguous. Keep
+    # the earlier detector for that case rather than guessing at thin seams.
+    if len(internal) == 1 and left == 0 and right == view.shape[1] and top == 0 and bottom == len(probe):
+        return None
+
+    spans = np.diff([(a + b) / 2 for a, b in internal])
+    if len(spans) and ((spans < .71 * pitch) | (spans > 1.29 * pitch)).any():
+        return None
+
+    # With two internal gaps we know the real pitch. Exclude partial end
+    # frames when the scanned image starts or ends inside a picture.
+    min_interior = max(.39 * width_at_probe, .55 * pitch)
+    min_outer = max(min_interior, .70 * pitch) if len(internal) >= 2 else min_interior
+    trimmed = []
+    gaps = [((a + b) // 2) * stride for a, b in internal]
+    limits = [(top - 1, top - 1), *internal, (bottom, bottom)]
+    guard = max(1, round(width * .0015))
+    for i, ((_, a), (b, _)) in enumerate(zip(limits, limits[1:])):
+        minimum = min_outer if i in (0, len(limits) - 2) else min_interior
+        if b - a - 1 >= minimum:
+            y0 = (a + 1) * stride + guard
+            y1 = min(height, b * stride) - guard
+            if y1 > y0:
+                trimmed.append((y0, y1))
+    if len(trimmed) < 2:
+        return None
+
+    samples = []
+    for a, b in internal:
+        middle = (a + b) // 2
+        half = min(8, (b - a) // 4)
+        pixels = probe[middle - half:middle + half + 1]
+        match = relative[middle - half:middle + half + 1] > .82
+        if np.any(match):
+            samples.append(np.median(pixels[match], axis=0))
+    if not samples:
+        return None
+    base = np.median(samples, axis=0)
+    return trimmed, gaps, base
+
+
+def _trim_rails(view, start, end, frames, base):
+    """Trim thin opposing clear rails while leaving unverified sides intact."""
+    width = end - start
+    rows = np.concatenate([np.linspace(a + .16 * (b - a), b - .16 * (b - a) - 1, 16, dtype=int)
+                           for a, b in frames])
+    data = view[rows, start:end]
+    ratio = np.min(data / np.maximum(base, 1e-6), axis=2)
+    edge = max(2, round(width * .075))
+    clear = np.mean(ratio > .84, axis=0) >= .52
+    cols = _runs(clear, max(2, round(width * .002)))
+    left = [b + 1 for a, b in cols if b < edge]
+    right = [a for a, b in cols if a >= width - edge]
+    if left and right:
+        return start + left[-1], start + right[0]
+    return start, end
+
+
+def detect_layout(img, min_strip_width=200, min_gap=20, pad=45):
+    """Locate reliable multi-frame strips in either scan direction."""
+    step = max(1, math.ceil(max(img.shape[:2]) / 1200))
+    small = img[::step, ::step]
+    candidates = []
+    for horizontal in (False, True):
+        view = img.swapaxes(0, 1) if horizontal else img
+        reduced = small.swapaxes(0, 1) if horizontal else small
+        minimum = max(2, round(min(min_strip_width / step, reduced.shape[1] * .12)))
+        bands = _strip_ranges(reduced, minimum)
+        strips, bounds, gaps, bases = [], [], [], []
+        for start, end in bands:
+            start, end = start * step, min(view.shape[1], end * step)
+            frames = _strip_frames(view, start, end)
+            if frames is None:
+                continue
+            limits, centers, base = frames
+            strips.append(_trim_rails(view, start, end, limits, base))
+            gaps.append(centers)
+            bases.append(base.astype(float).tolist())
+            bounds.append(limits)
+        if bounds:
+            dimensions = [(b - a, y1 - y0) for (a, b), frames in zip(strips, bounds) for y0, y1 in frames]
+            widths, heights = np.asarray(dimensions).T
+            portrait = np.median(widths) > np.median(heights) if horizontal else np.median(heights) > np.median(widths)
+            layout = StripLayout(strips, gaps, bases, bounds, 90 if portrait else 0, horizontal=horizontal)
+            area = int(np.sum(widths * heights))
+            candidates.append((area, layout))
+    if candidates:
+        return max(candidates, key=lambda item: item[0])[1]
+    return detect_layout_previous(img, min_strip_width, min_gap, pad)
+
+
 def clear_gap_bases(img,layout):
     """Bounded full-resolution samples contained in verified clear gaps.
 
@@ -283,6 +494,7 @@ def clear_gap_bases(img,layout):
     each proposed center, then sample only its interior in source pixels.
     Legacy detection stays unchanged for restoration of recorded old layouts.
     """
+    img=analysis_view(img,layout)
     result=[];h=img.shape[0]
     for si,((x0,x1),gaps) in enumerate(zip(layout.strips,layout.gaps)):
         width=x1-x0;left=x0+round(width*.15);right=x1-round(width*.15)
@@ -308,17 +520,15 @@ def clear_gap_bases(img,layout):
 def split_frames(img: np.ndarray, layout: StripLayout, rotate: int | None = None):
     """按布局切帧，返回 [(strip_idx, frame_idx, 数组)]，已按 rotate 旋转。"""
     rot = layout.rotation if rotate is None else rotate
-    out = [];index=0
-    for si, ((x0, x1), frames) in enumerate(zip(layout.strips, layout.bounds)):
-        for fi, (y0, y1) in enumerate(frames):
-            arr = np.ascontiguousarray(img[y0:y1, x0:x1])
-            if frame_angle(layout,index):
-                import geometry
-                arr=geometry.apply(arr,{'straighten':frame_angle(layout,index)})
-            index+=1
-            if rot:
-                arr = np.rot90(arr, k=-(rot // 90))  # 正数 = 顺时针
-            out.append((si, fi, arr))
+    out = []
+    for index, (si, fi, x0, x1, y0, y1) in enumerate(frame_boxes(layout)):
+        arr = np.ascontiguousarray(img[y0:y1, x0:x1])
+        if frame_angle(layout,index):
+            import geometry
+            arr=geometry.apply(arr,{'straighten':frame_angle(layout,index)})
+        if rot:
+            arr = np.rot90(arr, k=-(rot // 90))  # 正数 = 顺时针
+        out.append((si, fi, arr))
     return out
 
 
@@ -327,7 +537,7 @@ def frame_boxes(layout: StripLayout) -> list[tuple[int, int, int, int, int, int]
     boxes = []
     for si, ((x0, x1), frames) in enumerate(zip(layout.strips, layout.bounds)):
         for fi, (y0, y1) in enumerate(frames):
-            boxes.append((si, fi, x0, x1, y0, y1))
+            boxes.append((si, fi, y0, y1, x0, x1) if layout.horizontal else (si, fi, x0, x1, y0, y1))
     return boxes
 
 

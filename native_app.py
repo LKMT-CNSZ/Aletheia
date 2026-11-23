@@ -1,4 +1,4 @@
-"""FilmInvert Native: Qt Widgets desktop application, no web view/server."""
+"""Aletheia film editor, built with Qt Widgets."""
 from pathlib import Path
 import argparse
 import copy
@@ -14,7 +14,7 @@ ROOT=Path(getattr(sys,'_MEIPASS',Path(__file__).resolve().parent))
 APP_DIR=Path(sys.executable).parent if getattr(sys,'frozen',False) else ROOT
 if not getattr(sys,'frozen',False) and (ROOT.parent/'portable-layout.json').is_file():
     APP_DIR=ROOT.parent
-from app_paths import select_profile, default_output
+from app_paths import APP_NAME, select_profile, default_output
 if (ROOT/'vendor').exists():sys.path.insert(0,str(ROOT/'vendor'))
 
 import numpy as np
@@ -45,7 +45,6 @@ from batch_store import BatchStore
 from native_batch import BatchController,BatchDialog
 from native_efficiency import PhotoFilters,EditingKeys,PrefetchWorker,catalog,phase,job_states
 
-APP_NAME='FilmInvert Native'
 IMAGE_FILTER=_t('胶片图像 (*.tif *.tiff *.png *.jpg *.jpeg *.cr2 *.cr3 *.nef *.arw *.dng *.raf *.orf *.rw2 *.fff *.3fr *.pef *.srw *.iiq);;所有文件 (*)')
 
 def app_icon():
@@ -251,11 +250,11 @@ class MainWindow(QMainWindow):
         help_menu.addAction(self.action(_t('批量操作与快捷键…'),self.show_efficiency_help))
         help_menu.addAction(self.action(_t('打开用户数据目录'),lambda:QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.profile.resolve())))))
         help_menu.addAction(self.action(_t('关于'),lambda:_ui(QMessageBox.about, self,APP_NAME,
-            _tf('FilmInvert Native {0} 功能预览版\n照片库 · 参数快照队列 · 片边辅助 · 色卡标定\n官方 Python 运行时与应用文件分开分发。', model.VERSION.removesuffix("-native")))))
+            _tf('{0} {1} 正式版\n照片库 · 参数快照队列 · 片边辅助 · 色卡标定\n官方 Python 运行时与应用文件分开分发。', APP_NAME, model.VERSION.removesuffix("-native")))))
     def _build_toolbar(self):
         bar=_ui(QToolBar, _t('主工具栏'),self);bar.setObjectName('mainToolbar');bar.setMovable(False);self.addToolBar(bar)
         bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon);bar.setIconSize(QSize(16,16))
-        brand=_ui(QLabel, 'FilmInvert');brand.setProperty('role','brand');bar.addWidget(brand)
+        brand=_ui(QLabel, APP_NAME);brand.setProperty('role','brand');bar.addWidget(brand)
         for action,kind in ((self.open_action,'open'),(self.studio_action,'library'),(self.export_action,'export'),
                 (self.frame_action,'frames'),(self.geometry_action,'crop'),(self.straighten_action,'straighten'),
                 (self.perspective_action,'perspective'),(self.fit_action,'fit'),(self.pixel_action,'pixel')):
@@ -282,7 +281,8 @@ class MainWindow(QMainWindow):
         self.export_button=_ui(QPushButton, _t('导出 TIFF / HDR…'));self.export_button.setProperty('role','primary')
         self.export_button.clicked.connect(self.export_dialog);bar.addWidget(self.export_button);bar.addAction(self.roll_action)
         self.sample_actions={}
-        for key,title in (('base',_t('点片基')),('anchor',_t('点黑场')),('gray',_t('点中性灰'))):
+        for key,title in (('base',_t('点片基')),('anchor',_t('点黑场')),('gray',_t('点中性灰')),
+                          ('shadow',_t('点暗部中性灰')),('highlight',_t('点亮部中性灰'))):
             action=self.action(title,lambda checked,k=key:self.choose_sample(k,checked),checkable=True)
             self.sample_actions[key]=action
         self.toolbar=bar
@@ -332,7 +332,7 @@ class MainWindow(QMainWindow):
         self.photos.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel);self.photos.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.photos.currentRowChanged.connect(self.go_photo);self.photos.hide();layout.addWidget(self.photos,1)
         line=QHBoxLayout();self.keep_check=_ui(QCheckBox, _t('切帧沿用当前调色'));self.keep_check.setChecked(True);line.addWidget(self.keep_check)
-        _ui(self.keep_check.setToolTip, _t('关闭后，切回已修帧时恢复它的独立参数。'))
+        _ui(self.keep_check.setToolTip, _t('只对没有保存调色的帧沿用当前参数。切回已编辑的帧时恢复它自己的参数。'))
         self.meter_check=_ui(QCheckBox, _t('每帧独立估计跨度'));self.meter_check.setChecked(True);line.addWidget(self.meter_check)
         self.keep_check.toggled.connect(self.navigation_options_changed);self.meter_check.toggled.connect(self.navigation_options_changed)
         line.addStretch();self.apply_button=_ui(QPushButton, _t('应用调色到全部帧'));self.apply_button.clicked.connect(self.apply_roll);line.addWidget(self.apply_button)
@@ -469,6 +469,8 @@ class MainWindow(QMainWindow):
             self.parameter(basic,*args)
         self.combo(basic,_t('自动测光'),'meter_mode',[(_t('排除片边'),'edges'),(_t('全幅（兼容）'),'legacy')])
         self.section(basic,_t('影调与颜色'))
+        self.button_row(basic,[(_t('自动分区校色'),self.correct_negative_color),(_t('清除分区校色'),self.reset_tone_balance)])
+        self.note(basic,_t('暗部和亮部偏色不同时，可在「取样」中分别点有细节的中性灰。'))
         for title,key,low,high in ((_t('阴影'),'tone_shadows',-1,1),(_t('高光'),'tone_highlights',-1,1),
                 (_t('白场调整'),'tone_whites',-1,1),(_t('黑场调整'),'tone_blacks',-1,1),(_t('高光柔化'),'tone_rolloff',0,1)):
             self.parameter(basic,title,key,low,high,.05,0)
@@ -489,6 +491,7 @@ class MainWindow(QMainWindow):
         self.geometry_label=self.note(basic,_t('完整画面'))
         basic.addStretch()
         hdr_page=self.page('HDR');self.section(hdr_page,_t('HDR 调色与输出'))
+        self.hdr_feedback=self.note(hdr_page,_t('当前为 SDR 显示；HDR 调色未启用。'))
         self.hdr_check=_ui(QCheckBox,_t('启用 HDR 调色（保存到照片）'));hdr_page.addWidget(self.hdr_check)
         self.hdr_check.toggled.connect(lambda v:self.edit_parameter('hdr_enabled',v,True))
         presets=QHBoxLayout();self.hdr_preset_buttons={}
@@ -496,14 +499,38 @@ class MainWindow(QMainWindow):
             button=_ui(QPushButton,label);button.clicked.connect(lambda checked=False,n=name:self.apply_hdr_preset(n))
             presets.addWidget(button);self.hdr_preset_buttons[name]=button
         hdr_page.addLayout(presets)
+        impact_presets=QHBoxLayout()
+        for label,name in ((_t('明亮（保色）'),'bright'),(_t('高光增强'),'impact')):
+            button=_ui(QPushButton,label);button.clicked.connect(lambda checked=False,n=name:self.apply_hdr_preset(n))
+            impact_presets.addWidget(button);self.hdr_preset_buttons[name]=button
+        hdr_page.addLayout(impact_presets)
         self.note(hdr_page,_t('预设仅修改 HDR 与 SDR 版本参数，可撤销并继续微调；不恢复已丢失的高光。'))
         for title,key,low,high,step,default in ((_t('亮部强度 EV'),'hdr_strength',0,3,.1,1),(_t('亮部起点'),'hdr_start',.1,1,.05,.5),(_t('高光过渡'),'hdr_softness',.05,2,.05,.5),(_t('HDR 范围 EV'),'hdr_limit',0,6,.25,4)):
             self.parameter(hdr_page,title,key,low,high,step,default)
-        self.note(hdr_page,_t('HDR 调色进入工程与 HDR TIFF/JXR/Ultra HDR JPEG 导出；屏幕亮度适配独立保存在本机。'))
-        self.note(hdr_page,_t('导出中可选 Ultra HDR JPEG：内含 sRGB 底图与 ISO 增益图；JPEG 有损，HDR 显示取决于查看器支持。'))
+        self.parameter(hdr_page,_t('HDR 冲击力'),'hdr_punch',0,1,.05,0)
+        self.parameter(hdr_page,_t('高光淡化（创意）'),'hdr_brilliance',0,1,.05,0)
+        self.note(hdr_page,_t('保色预设关闭创意冲击力和高光淡化，保留颜色比例并适度提升亮部。已有工程保持原参数，重新应用预设即可切换。'))
+        self.section(hdr_page,_t('选择性 HDR'))
+        self.parameter(hdr_page,_t('彩色高光增强'),'hdr_chroma',0,1,.05,0)
+        self.parameter(hdr_page,_t('蓝色区域保护'),'hdr_sky_protect',0,1,.05,0)
+        self.combo(hdr_page,_t('增强颜色范围'),'hdr_target',[(_t('全部颜色'),'all'),(_t('红色'),'red'),(_t('绿色'),'green'),(_t('蓝色'),'blue'),(_t('品红'),'magenta')])
+        self.note(hdr_page,_t('蓝色保护按颜色判断，也影响蓝色物体；局部画笔与渐变可进一步控制受光区域。旧工程为兼容模式，应用预设可启用彩色增强。'))
+        self.section(hdr_page,_t('HDR 扩展曲线'))
+        from native_hdr_curve import HDRCurveEditor
+        self.hdr_curve=HDRCurveEditor();hdr_page.addWidget(self.hdr_curve)
+        self.hdr_curve.changed.connect(self.hdr_curve_changed);self.hdr_curve.committed.connect(self.commit_history)
+        self.button_row(hdr_page,[(_t('重置 HDR 曲线'),self.reset_hdr_curve)])
+        self.note(hdr_page,_t('HDR 调色保存在工程及 HDR TIFF 中；屏幕适配独立保存在本机。'))
+        self.note(hdr_page,_t('TIFF 导出可选无损压缩 ZIP 或不压缩。HDR 保留 32 位浮点亮部；压缩率取决于图像内容。'))
         self.section(hdr_page,_t('SDR 版本'))
+        self.sdr_color_safe=_ui(QCheckBox,_t('SDR 保色映射'));hdr_page.addWidget(self.sdr_color_safe)
+        self.sdr_color_safe.toggled.connect(lambda v:self.edit_parameter('sdr_hdr_color_safe',v,True))
         self.parameter(hdr_page,_t('SDR 高光压缩'),'sdr_hdr_rolloff',0,1,.05,1)
         self.parameter(hdr_page,_t('SDR 曝光 EV'),'sdr_hdr_exposure',-2,2,.1,0)
+        self.parameter(hdr_page,_t('SDR 对比度'),'sdr_hdr_contrast',-1,1,.05,0)
+        self.parameter(hdr_page,_t('SDR 高光 EV'),'sdr_hdr_highlights',-1,1,.05,0)
+        self.parameter(hdr_page,_t('SDR 高光饱和度'),'sdr_hdr_saturation',-1,1,.05,0)
+        self.note(hdr_page,_t('用「对照 SDR 输出」查看下方 SDR 参数。亮部强度只作用于超过亮部起点的区域。'))
         self.sdr_compare=_ui(QCheckBox,_t('对照 SDR 输出'));self.sdr_compare.toggled.connect(self.compare_sdr);hdr_page.addWidget(self.sdr_compare)
         self.hdr_ranges=_ui(QCheckBox,_t('HDR 范围着色'));_ui(self.hdr_ranges.setToolTip,_t('高光范围提示：黄为 HDR，红为超屏幕范围'));self.hdr_ranges.toggled.connect(self.visualize_hdr);hdr_page.addWidget(self.hdr_ranges)
         from native_hdr_workbench import HDRHistogram
@@ -544,6 +571,10 @@ class MainWindow(QMainWindow):
         self.note(restore,_t('单张图的参考必须同尺寸、同方向、同一光路；整条片使用帧间隙估计横向照明。暗角补偿后重新取片基。'))
         restore.addStretch()
         output=self.page(_t('导出'));self.section(output,_t('16bit TIFF 与色彩管理'))
+        self.jpeg_export=_ui(QCheckBox,_t('同时导出 JPEG'))
+        self.jpeg_export.setChecked(self.settings.value('exportJpeg',False,type=bool))
+        self.jpeg_export.toggled.connect(lambda checked:self.settings.setValue('exportJpeg',checked))
+        output.addWidget(self.jpeg_export)
         self.combo(output,_t('TIFF 输出空间'),'output_space',[('sRGB','srgb'),('Adobe RGB (1998)','adobe_rgb'),('ProPhoto RGB','prophoto')])
         self.note(output,_t('输出空间用于保存 TIFF 和嵌入 ICC。RAW 解码与片基取样使用当前工作空间；更改请用“编辑 → 更改当前工作空间”。'))
         self.note(output,_t('导出嵌入匹配的 ICC。直方图与越界叠层基于所选 TIFF 空间；预览抽样不代表全尺寸统计。'))
@@ -562,14 +593,27 @@ class MainWindow(QMainWindow):
         self.button_row(output,[(_t('打包工程与原片…'),self.pack_dialog),(_t('解包迁移工程…'),self.unpack_dialog)])
         self.last_path_label=self.note(output,_t('尚未导出'));output.addStretch()
         self.tabs.tabBar().moveTab(1,self.tabs.count()-1)
+        for index,title in enumerate((_t('基础'),_t('曲线 / HSL'),_t('修复'),_t('导出'),'HDR')):
+            _ui(self.tabs.setTabText,index,title)
         dock.setWidget(panel);self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea,dock);self.controls_dock=dock
         self.view_menu.addAction(dock.toggleViewAction())
     def _build_status(self):
-        self.progress=QProgressBar();self.progress.setFixedWidth(160);self.progress.setVisible(False)
+        self.progress=QProgressBar();self.progress.setFixedWidth(180);self.progress.setVisible(False)
+        _ui(self.progress.setAccessibleName,_t('导出进度'))
+        self.queue_progress=QProgressBar();self.queue_progress.setFixedWidth(180);self.queue_progress.hide()
+        _ui(self.queue_progress.setAccessibleName,_t('导出队列'))
         self.cancel_button=_ui(QPushButton, _t('取消'));self.cancel_button.setVisible(False);self.cancel_button.clicked.connect(self.cancel_job)
         self.zoom_label=_ui(QLabel, _t('适应窗口'));self.history_label=_ui(QLabel, _t('0 步'))
         self.statusBar().addPermanentWidget(self.progress);self.statusBar().addPermanentWidget(self.cancel_button)
+        self.statusBar().addPermanentWidget(self.queue_progress)
+        self.queue_controller.changed.connect(self.update_queue_progress)
         self.statusBar().addPermanentWidget(self.history_label);self.statusBar().addPermanentWidget(self.zoom_label)
+    def update_queue_progress(self):
+        active=self.queue_controller.running() or self.queue_controller.automatic
+        self.queue_progress.setVisible(active)
+        if active:
+            from native_studio import set_export_progress
+            set_export_progress(self.queue_progress,self.studio_store.job_summaries(),self.queue_controller.scope)
     def _enable_document(self,on):
         self.hdr_canvas_action.setEnabled(on)
         if not on:self.hdr_canvas.set_linear(None)
@@ -592,6 +636,7 @@ class MainWindow(QMainWindow):
         job.result.connect(self._received);job.error.connect(self._failed);job.progress.connect(self._progress)
         job.finished.connect(self._thread_ended)
         if kind!='preview':self.foreground(True)
+        self.progress.setFormat('%p%')
         self.progress.setRange(0,0);self.progress.setVisible(True);_ui(self.statusBar().showMessage, message)
         self.cancel_button.setEnabled(True);self.cancel_button.setVisible(kind=='batch');job.start()
     def command(self,fn,done,message,kind='command'):
@@ -639,7 +684,12 @@ class MainWindow(QMainWindow):
         if self.closing and not any(j.isRunning() for j in self.jobs):QTimer.singleShot(0,self.close)
     @Slot(int,int,str)
     def _progress(self,value,total,message):
-        self.progress.setRange(0,total);self.progress.setValue(value);_ui(self.statusBar().showMessage, _tf('整卷导出 {0} / {1}', value, total))
+        self.progress.setRange(0,total);self.progress.setValue(value)
+        if self.task_kind=='batch':
+            _ui(self.progress.setFormat,_t('%v / %m 帧'))
+            _ui(self.statusBar().showMessage, _tf('整卷导出 {0} / {1}', value, total))
+        elif self.task_kind=='export':
+            _ui(self.statusBar().showMessage, _t('正在写入 TIFF…'))
     def show_error(self,error):
         io_path(self.profile/'last-error.log').write_text(error,encoding='utf-8')
         lines=[s for s in error.strip().splitlines() if s.strip()]
@@ -660,6 +710,8 @@ class MainWindow(QMainWindow):
         if self.job is not None:self.preview_pending=True;return
         value=copy.deepcopy(self.p);revision=self.revision;full=self.full_resolution;original=self.original_action.isChecked();start=time.perf_counter()
         hdr=self.hdr_canvas.active
+        hdr_dialog=getattr(self,'hdr_preview_dialog',None)
+        hdr_window=hdr_dialog is not None and hdr_dialog.isVisible() and not hdr_dialog.canvas.failed
         ranges=self.hdr_ranges.isChecked() and not self.sdr_compare.isChecked()
         reveal=bool(self.import_reveal.pending and not original)
         source_path=self.info.get('path');frame_index=(self.info.get('strip') or {}).get('index')
@@ -677,9 +729,13 @@ class MainWindow(QMainWindow):
                 self.canvas.set_region_pixels(result['pixels'],result['region'],result['image_shape'],display=result.get('display'),diagnostics=None if original else result.get('diagnostics'))
             else:self.canvas.set_pixels(result['pixels'],full=self.reset_zoom,display=result.get('display'),diagnostics=None if original else result.get('diagnostics'))
             self.hdr_canvas.set_linear(result.get('hdr_linear') if hdr else None)
+            if hdr_window and hdr_dialog is self.hdr_preview_dialog and hdr_dialog.isVisible():
+                hdr_dialog.canvas.linear=result.get('hdr_window_linear',result['hdr_linear'])
+                hdr_dialog.canvas.update()
+            self.histogram.set_bins(result['hist'])
+            self.hdr_hist_data=result.get('extended_histogram')
             self.hdr_scope_linear=result.get('hdr_linear');self.refresh_hdr_scope()
             self.reset_zoom=False
-            self.histogram.set_bins(result['hist'])
             if not original and not full:
                 try:
                     self.save_session(refresh_library=False);self.studio_store.save_thumbnail(self.info['path'],result['pixels'])
@@ -717,7 +773,7 @@ class MainWindow(QMainWindow):
             elapsed=round((time.perf_counter()-start)*1000)
             h,w=result['pixels'].shape[:2];_ui(self.statusBar().showMessage, _tf('{0} · {1}×{2} · {3} ms · ', _t('原片') if original else _t('正片'), w, h, elapsed)+self.monitor_name+(_t(' · 输出色域预览') if proof else '')+((' · '+value['output_space']+_tf(' 越界 {0:.3f}% · 16bit端点 {1:.3f}%', result['diagnostics']['fraction']*100, result['diagnostics']['endpoints']*100)) if not original else ''))
             if hdr:
-                status=self.statusBar().currentMessage()+_t(' · 主画布 HDR · 直方图为 SDR 输出统计')
+                status=self.statusBar().currentMessage()+_t(' · 主画布 HDR · 直方图为 HDR 主图统计')
                 if self.hdr_canvas.info.get('peak_estimated'):status+=_tf(' · 屏幕峰值报告异常，当前映射峰值 {0:.0f} nits，请校准',self.hdr_canvas.peak_nits)
                 _ui(self.statusBar().showMessage,status)
             if full:_ui(self.statusBar().showMessage, self.statusBar().currentMessage()+_t(' · 100% 可见区域统计'))
@@ -725,7 +781,13 @@ class MainWindow(QMainWindow):
                 _ui(self.statusBar().showMessage, self.preview_fallback);self.preview_fallback=None
             self.schedule_prefetch()
         def work(c,p):
-            result=model.hdr_edit_preview(value,full,original,region,c) if hdr or ranges or value.get('hdr_enabled') else (model.preview(value,full,original,region=region,cancel=c) if region is not None else model.preview(value,full,original))
+            result=model.hdr_edit_preview(value,full,original,region,c) if hdr or hdr_window or ranges or value.get('hdr_enabled') else (model.preview(value,full,original,region=region,cancel=c) if region is not None else model.preview(value,full,original))
+            if hdr_window and (full or original):
+                result['hdr_window_linear']=model.hdr_preview(value)
+            if result.get('hdr_linear') is not None and not original and (hdr or value.get('hdr_enabled')):
+                from hdr_histogram import build
+                result['extended_histogram']=build(result['hdr_linear'])
+                if c.is_set():raise InterruptedError('HDR histogram canceled')
             if 'wide' in result:
                 from input_color import display_working
                 result['display']=display_working(result['wide'],'prophoto',monitor,proof)
@@ -756,7 +818,10 @@ class MainWindow(QMainWindow):
             self.command(lambda c,p:model.meter(changed),self.set_parameters,_t('正在重估片基与跨度…'));return
         self.p[key]=value;self.history_timer.start()
         if key=='hdr_enabled':
-            for field in ('hdr_strength','hdr_start','hdr_softness','hdr_limit','sdr_hdr_rolloff','sdr_hdr_exposure'):self.rows[field].setEnabled(value)
+            if value:self.original_action.setChecked(False)
+            self.sdr_color_safe.setEnabled(value)
+            self.hdr_curve.setEnabled(value);self.combos['hdr_target'].setEnabled(value)
+            for field in ('hdr_strength','hdr_start','hdr_softness','hdr_limit','sdr_hdr_rolloff','sdr_hdr_exposure','hdr_chroma','hdr_sky_protect','hdr_punch','hdr_brilliance','sdr_hdr_contrast','sdr_hdr_highlights','sdr_hdr_saturation'):self.rows[field].setEnabled(value)
             self.rows['tone_rolloff'].setEnabled(not value)
         self.update_calibration_label()
         self.request_preview()
@@ -764,16 +829,21 @@ class MainWindow(QMainWindow):
     def apply_hdr_preset(self,name):
         if not self.loaded or self.pending_command:return
         import hdr_color
+        self.original_action.setChecked(False)
         self.commit_history();self.set_parameters(hdr_color.preset(self.p,name))
     def sync_ui(self):
         self.syncing=True
         self.hdr_check.setChecked(bool(self.p.get('hdr_enabled')))
+        self.sdr_color_safe.setChecked(bool(self.p.get('sdr_hdr_color_safe')))
+        self.sdr_color_safe.setEnabled(bool(self.p.get('hdr_enabled')))
         self.rows['tone_rolloff'].setEnabled(not self.p.get('hdr_enabled'))
-        for key in ('hdr_strength','hdr_start','hdr_softness','hdr_limit','sdr_hdr_rolloff','sdr_hdr_exposure'):self.rows[key].setEnabled(bool(self.p.get('hdr_enabled')))
+        for key in ('hdr_strength','hdr_start','hdr_softness','hdr_limit','sdr_hdr_rolloff','sdr_hdr_exposure','hdr_chroma','hdr_sky_protect','hdr_punch','hdr_brilliance','sdr_hdr_contrast','sdr_hdr_highlights','sdr_hdr_saturation'):self.rows[key].setEnabled(bool(self.p.get('hdr_enabled')))
         for key,row in self.rows.items():row.set_value(self.p.get(key,0))
         for key,combo in self.combos.items():
             index=combo.findData(self.p.get(key));combo.setCurrentIndex(max(0,index))
         self.flip_check.setChecked(bool(self.p.get('flip')));self.repair_check.setChecked(bool(self.p.get('channel_repair')))
+        self.hdr_curve.set_points(self.p.get('hdr_curve',[[0,0],[1,1]]));self.hdr_curve.setEnabled(bool(self.p.get('hdr_enabled')))
+        self.combos['hdr_target'].setEnabled(bool(self.p.get('hdr_enabled')))
         self.curve.set_points(self.p['curve']);self.select_hsl(self.hsl_index)
         _ui(self.wb_label.setText, _t('RGB 增益 ')+ ' / '.join(_tf('{0:.3f}', v) for v in self.p['wb_gain']))
         self.update_calibration_label()
@@ -811,6 +881,11 @@ class MainWindow(QMainWindow):
         if value.get('working_space','srgb')!=space:raise ValueError(_t('配方的工作空间不同，请先切换当前工作空间或使用匹配配方'))
         if value.get('calibration') and value['calibration'].get('working_space','srgb')!=space:raise ValueError(_t('色卡配置与工作空间不一致，请重新标定'))
         self.p=copy.deepcopy(value);self.sync_ui();self.commit_history();self.request_preview()
+    def hdr_curve_changed(self,value):
+        if self.syncing:return
+        self.p['hdr_curve']=value;self.history_timer.start();self.request_preview()
+    def reset_hdr_curve(self):
+        self.p['hdr_curve']=[[0.,0.],[1.,1.]];self.hdr_curve.set_points(self.p['hdr_curve']);self.commit_history();self.request_preview()
     def curve_changed(self,value):self.p['curve']=value;self.request_preview()
     def set_curve(self,value):self.p['curve']=value;self.curve.set_points(value);self.commit_history();self.request_preview()
     def select_hsl(self,index):
@@ -829,7 +904,7 @@ class MainWindow(QMainWindow):
         p['meter_mode']=self.p.get('meter_mode','legacy')
         p['scene_hdr']=self.p.get('scene_hdr',False)
         if self.info.get('hdr_kind')=='positive':p.update(mode='positive',black=0.,white=1.,tone_rolloff=.75)
-        self.command(lambda c,progress:model.meter(p),self.set_parameters,_t('正在重估片基与跨度…'))
+        self.command(lambda c,progress:model.reset_grade(p),self.set_parameters,_t('正在重估片基与跨度…'))
     def viewport_moved(self):
         if self.loaded and self.full_resolution:self.request_preview()
     def fit_view(self):
@@ -843,7 +918,9 @@ class MainWindow(QMainWindow):
         self.sample_kind=kind if checked else None
         for key,action in self.sample_actions.items():action.setChecked(key==self.sample_kind)
         self.canvas.set_sampling(self.sample_kind is not None)
-        if checked:_ui(self.statusBar().showMessage, _t('在画布上点击取样；片基应选未曝光区域'))
+        if checked:
+            message=_t('在画布上点击有细节的中性灰，避开纯黑、过曝和有颜色的物体') if kind in ('shadow','highlight') else _t('在画布上点击取样；片基应选未曝光区域')
+            _ui(self.statusBar().showMessage,message)
     def sample_at(self,x,y):
         if not self.loaded or not self.sample_kind or self.pending_command:return
         kind=self.sample_kind;self.choose_sample(kind,False)
@@ -852,6 +929,14 @@ class MainWindow(QMainWindow):
         self.command(lambda c,p:model.sample(value,x,y,kind,full),self.set_parameters,_t('正在取样…'))
     def automatic_wb(self,method):
         value=copy.deepcopy(self.p);self.command(lambda c,p:model.white_balance(value,method),self.set_parameters,_t('正在估计白平衡…'))
+    def correct_negative_color(self):
+        if not self.loaded or self.p.get('mode')!='color_negative':return
+        value=copy.deepcopy(self.p)
+        self.command(lambda c,p:model.negative_color(value),self.set_parameters,_t('正在估算暗部和亮部偏色…'))
+    def reset_tone_balance(self):
+        if self.loaded and self.p.get('tone_balance'):
+            density=self.p['tone_balance'].get('density')
+            self.set_parameters(dict(self.p,tone_balance={'density':density} if density else {}))
     def update_geometry_label(self):
         h,w=self.info.get('height',0),self.info.get('width',0)
         if not h or not w:_ui(self.geometry_label.setText, _t('完整画面'));return
@@ -909,22 +994,32 @@ class MainWindow(QMainWindow):
         dialog.deleteLater()
     def apply_frames(self,spec):
         value=copy.deepcopy(self.p);options=self.project_options()
+        developed=self.developed_frame_regions()
         def done(result):
-            self.layout_previous=result['previous'];self.on_reframed(result)
+            self.layout_previous=result['previous'];self.on_reframed(result,developed)
             _ui(self.statusBar().showMessage, _tf('切帧已更新；{0} 帧边界 / 方向改变，可从编辑菜单恢复切帧前状态。', result["changed"]))
         self.command(lambda c,p:model.reframe(spec,value,options),done,_t('正在应用输入模式与切帧…'))
-    def on_reframed(self,result):
+    def on_reframed(self,result,developed):
         self.info=result['info'];self.p=result['params'];self.full_resolution=False;self.canvas.fit_mode=True
+        previous_count=len(self.developed_frames)
+        for index in range(len(result['thumbs'])):
+            region=model.source_region(index)
+            old=developed.get(region['id'])
+            if old and model._overlapping_frame(old['box'],region['box']):
+                self.developed_frames.add(self.frame_reveal_key(index))
+        if len(self.developed_frames)!=previous_count:
+            self.settings.setValue('developedFramesV1',sorted(self.developed_frames))
         if self.sample_kind:self.choose_sample(self.sample_kind,False)
         self.sync_ui();self.reset_history();self.build_frames(result['thumbs']);self._enable_document(True)
         self.save_session();self.request_preview()
     def restore_frames(self):
         if self.layout_previous is None:return
         snapshot=copy.deepcopy(self.layout_previous)
+        developed=self.developed_frame_regions()
         def done(result):
             self.layout_previous=None
             self.keep_check.setChecked(snapshot['options']['keep_params']);self.meter_check.setChecked(snapshot['options']['auto_meter'])
-            self.on_reframed(result)
+            self.on_reframed(result,developed)
         self.command(lambda c,p:model.restore_layout(snapshot),done,_t('正在恢复切帧前的整卷状态…'))
     def open_calibration(self):
         if not self.loaded:return
@@ -975,7 +1070,7 @@ class MainWindow(QMainWindow):
     def recalculate(self):
         value=copy.deepcopy(self.p);self.command(lambda c,p:model.meter(value),self.set_parameters,_t('正在重估片基与跨度…'))
     def strip_flat(self):
-        value=copy.deepcopy(self.p);value.update(flat_mode='strip',flat_strength=1)
+        value=copy.deepcopy(self.p);value.update(flat_mode='strip',flat_strength=1,flat_field=None)
         self.command(lambda c,p:model.meter(value),self.set_parameters,_t('正在估计各条照明…'))
     def clear_flat(self):
         value=copy.deepcopy(self.p);value.update(flat_mode='off',flat_strength=0,flat_field=None)
@@ -1012,7 +1107,7 @@ class MainWindow(QMainWindow):
         path=str(Path(path).resolve());self.full_resolution=False;self.canvas.fit_mode=True
         mode=self.open_mode.currentData()
         color=self.settings.value('inputColor','legacy')
-        space='prophoto' if self.wide_open_action.isChecked() else 'srgb'
+        space='prophoto' if self.wide_open_action.isChecked() else None
         self.command(lambda c,p:model.open_image(path,input_mode=mode,input_color=color,working_space=space),self.on_opened,_t('正在读取并检测胶片…'))
     def show_input_color(self):
         if not self.loaded:return
@@ -1099,14 +1194,47 @@ class MainWindow(QMainWindow):
         else:self.arm_frame_reveal()
         self.request_preview(allow_reveal=True)
         if self.photo_filters.active():self.refresh_photo_filter()
-    def frame_reveal_key(self,index=None):
+    def frame_reveal_key(self,index=None,*,legacy=False,legacy_mode=None):
         import hashlib
         source=model.engine.STATE.get('native_source') or {}
-        identity=[os.path.normcase(source.get('path','')),source.get('sha256'),model.engine.STATE.get('native_input'),model.source_region(index)]
-        return hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
+        spec=model.engine.STATE.get('native_input') or {}
+        region=model.source_region(index)
+        # The old identity hashed every other manual frame as well. Only
+        # the decoder settings and this frame's source geometry matter.
+        if legacy:
+            interpretation=spec if legacy_mode is None else dict(spec,mode=legacy_mode,manual=None)
+        else:
+            interpretation=[spec.get('color','legacy'),spec.get('working_space','srgb')]
+        identity=[os.path.normcase(source.get('path','')),source.get('sha256'),interpretation,region]
+        digest=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
+        return digest if legacy else 'frame-v2:'+digest
+    def frame_is_developed(self,index=None):
+        key=self.frame_reveal_key(index)
+        if key in self.developed_frames:return True
+        legacy_key=self.frame_reveal_key(index,legacy=True)
+        # A profile already affected by the old bug can still have the
+        # automatic-layout record for this exact source frame.
+        was_manual=(model.engine.STATE.get('native_input') or {}).get('manual') is not None
+        previously_developed=legacy_key in self.developed_frames
+        if was_manual and not previously_developed:
+            previously_developed=any(self.frame_reveal_key(index,legacy=True,legacy_mode=mode) in self.developed_frames
+                                     for mode in ('auto','strip'))
+        if previously_developed:
+            self.developed_frames.add(key)
+            return True
+        return False
+    def developed_frame_regions(self):
+        self.import_reveal.cancel()
+        regions={}
+        if self.info.get('strip'):
+            for index in range(self.info['strip']['frames']):
+                if self.frame_is_developed(index):
+                    region=model.source_region(index)
+                    regions[region['id']]=region
+        return regions
     def arm_frame_reveal(self):
         self.import_reveal.cancel()
-        if self.frame_reveal_key() not in self.developed_frames:self.import_reveal.arm(self.p.get('mode'))
+        if not self.frame_is_developed():self.import_reveal.arm(self.p.get('mode'))
     def finish_frame_reveal(self):
         callback=self.reveal_finish;self.reveal_finish=None
         if callback:callback()
@@ -1115,11 +1243,14 @@ class MainWindow(QMainWindow):
         from native_widgets import monitor_image
         self.frames.blockSignals(True);_ui(self.frames.clear)
         originals=model.original_thumbnails() if self.p.get('mode') in ('color_negative','bw_negative') else []
+        previous_count=len(self.developed_frames)
         for i,jpg in enumerate(thumbs):
-            if i<len(originals) and self.frame_reveal_key(i) not in self.developed_frames:jpg=originals[i]
+            if i<len(originals) and not self.frame_is_developed(i):jpg=originals[i]
             pix=QPixmap();pix.loadFromData(jpg)
             pix=QPixmap.fromImage(monitor_image(pix.toImage(),self.monitor_profile))
             item=_ui(QListWidgetItem, photo_icon(pix),_tf('第 {0} 帧', i+1));_ui(self.frames.addItem, item)
+        if len(self.developed_frames)!=previous_count:
+            self.settings.setValue('developedFramesV1',sorted(self.developed_frames))
         index=self.info.get('strip',{}).get('index',0) if self.info.get('strip') else -1
         self.frames.setCurrentRow(index);self.frames.blockSignals(False);self.update_navigation()
     def update_navigation(self):
@@ -1219,7 +1350,7 @@ class MainWindow(QMainWindow):
         return {'rating':0,'flag':'none','roll':''}
     def export_options(self):
         from export_policy import options
-        return options(self.naming_edit.text().strip(),self.current_metadata()['roll'])
+        return dict(options(self.naming_edit.text().strip(),self.current_metadata()['roll']),jpeg=self.jpeg_export.isChecked())
     def contact_dialog(self):
         if not self.loaded:return
         folder=_ui(QFileDialog.getExistingDirectory, self,_t('选择联系表输出位置'),self.output_edit.text())
@@ -1261,7 +1392,7 @@ class MainWindow(QMainWindow):
             _ui(self.statusBar().showMessage, _t('迁移工程已恢复：')+result['folder'])
         self.command(work,done,_t('正在校验、解包并恢复工程…'),'transfer')
     def acceptance_dialog(self):
-        path,_=_ui(QFileDialog.getSaveFileName, self,_t('保存本机验收报告（不含原片内容或路径）'),'FilmInvert-acceptance.json','JSON (*.json)')
+        path,_=_ui(QFileDialog.getSaveFileName, self,_t('保存本机验收报告（不含原片内容或路径）'),f'{APP_NAME}-acceptance.json','JSON (*.json)')
         if path:
             if not path.lower().endswith('.json'):path+='.json'
             from runtime_metrics import report
@@ -1275,34 +1406,28 @@ class MainWindow(QMainWindow):
         path.mkdir(parents=True,exist_ok=True);QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
     def export_dialog(self,checked=False,*,hdr=None):
         if not self.loaded:return
-        viewer=hdr is None and self.hdr_canvas.active
         hdr=self.hdr_canvas.active if hdr is None else hdr
-        sdr_filter='SDR TIFF - 16bit (*.tif *.tiff)';hdr_filter='HDR TIFF - Float32 (*.tif *.tiff)'
-        viewer_filter='Windows HDR - JPEG XR (*.jxr)'
-        ultra_filter='Ultra HDR JPEG - SDR + Gain Map (*.jpg *.jpeg)'
-        stem=Path(self.info['path']).stem;info=self.info.get('strip');suffix=_tf('-f{0:02d}', info["index"]+1) if info else ''
+        from tiff_formats import export_formats
+        formats=export_formats()
+        compression=self.settings.value('tiffCompression','deflate')
+        if compression not in ('none','deflate'):compression='deflate'
+        default_filter=next(label for label,pair in formats.items() if pair==(bool(hdr),compression))
+        stem=Path(self.info['path']).stem;info=self.info.get('strip');suffix=_tf('-f{0:02d}',info['index']+1) if info else ''
         try:
             from export_policy import filename
-            name=filename(self.info['path'],info['index']+1 if info else 1,self.export_options(),_tf('{0}{1}-positive.tif', stem, suffix))
+            name=filename(self.info['path'],info['index']+1 if info else 1,self.export_options(),_tf('{0}{1}-positive.tif',stem,suffix))
         except ValueError as error:self.show_error(str(error));return
-        if hdr:name=Path(name).stem+('-hdr.jxr' if viewer else '-hdr.tif')
+        if hdr:name=Path(name).stem+'-hdr.tif'
         default=Path(self.output_edit.text())/name
-        path,selected=_ui(QFileDialog.getSaveFileName, self,_t('导出 TIFF / HDR'),str(default),';;'.join((sdr_filter,hdr_filter,viewer_filter,ultra_filter)),viewer_filter if viewer else hdr_filter if hdr else sdr_filter)
+        path,selected=_ui(QFileDialog.getSaveFileName,self,_t('导出 TIFF / HDR'),str(default),';;'.join(formats),default_filter)
         if not path:return
-        if selected==ultra_filter:
-            suffix=Path(path).suffix.lower()
-            if suffix in ('.tif','.tiff','.jxr'):path=str(Path(path).with_suffix('.jpg'))
-            elif suffix not in ('.jpg','.jpeg'):path+='.jpg'
-            self.hdr_export_to(path,ultra=True);return
-        if selected==viewer_filter:
-            suffix=Path(path).suffix.lower()
-            if suffix in ('.tif','.tiff'):path=str(Path(path).with_suffix('.jxr'))
-            elif suffix!='.jxr':path+='.jxr'
-            self.hdr_export_to(path,viewer=True);return
-        if Path(path).suffix.lower() in ('.jxr','.jpg','.jpeg'):path=str(Path(path).with_suffix('.tif'))
+        if selected not in formats:self.show_error(str(_t('请选择 TIFF 导出格式。')));return
+        output_hdr,compression=formats[selected]
+        if Path(path).suffix.lower() in ('.jxr','.jpg','.jpeg','.png'):path=str(Path(path).with_suffix('.tif'))
         elif Path(path).suffix.lower() not in ('.tif','.tiff'):path+='.tif'
-        if selected==hdr_filter:self.hdr_export_to(path)
-        else:self.export_to(path)
+        self.settings.setValue('tiffCompression',compression)
+        if output_hdr:self.hdr_export_to(path,compression=compression)
+        else:self.export_to(path,compression=compression)
     def open_hdr_merge(self):
         from native_hdr import MergeDialog
         dialog=getattr(self,'hdr_merge_dialog',None)
@@ -1314,15 +1439,16 @@ class MainWindow(QMainWindow):
         if not on:self.import_reveal.cancel()
     def hdr_export_dialog(self):
         self.export_dialog(hdr=True)
-    def hdr_export_to(self,path,viewer=False,ultra=False):
+    def hdr_export_to(self,path,compression='deflate'):
         if not self.loaded:return
         value=copy.deepcopy(self.p)
+        jpeg=self.jpeg_export.isChecked()
         def done(result):
             self.last_export=result;_ui(self.last_path_label.setText,_t('已保存：\n')+result)
             _ui(self.output_edit.setText,str(Path(result).parent));self.settings.setValue('output',self.output_edit.text())
-            _ui(self.statusBar().showMessage,(_t('已保存 Ultra HDR JPEG：') if ultra else _t('已保存 Windows HDR 图像：') if viewer else _t('已保存线性 HDR TIFF：'))+result)
-        export=model.export_ultrahdr if ultra else model.export_hdr_view if viewer else model.export_hdr
-        self.command(lambda c,p:export(path,value,c),done,_t('正在导出线性 HDR 数据…'),'export')
+            _ui(self.statusBar().showMessage,(_t('已保存 HDR TIFF 和 JPEG：') if jpeg else _t('已保存线性 HDR TIFF：'))+result)
+        self.command(lambda c,p:model.export_hdr(path,value,c,compression=compression,
+                     progress=lambda done,total:p(done,total,''),jpeg=jpeg),done,_t('正在导出线性 HDR 数据…'),'export')
     def toggle_hdr_canvas(self,on):
         if on:
             try:self.hdr_canvas.start()
@@ -1340,6 +1466,7 @@ class MainWindow(QMainWindow):
     def compare_sdr(self,on):
         self.import_reveal.stop();self.hdr_canvas.sdr_proof=on
         self.canvas.viewport().setAttribute(Qt.WidgetAttribute.WA_PaintOnScreen,self.hdr_canvas.active and not on)
+        self.refresh_hdr_scope()
         for action in (self.proof_action,self.clipping_action):action.setEnabled(on or not self.hdr_canvas.active)
         self.canvas.clipping_item.setVisible((on or not self.hdr_canvas.active) and self.clipping_action.isChecked())
         self.canvas.viewport().update()
@@ -1349,11 +1476,22 @@ class MainWindow(QMainWindow):
         if self.loaded:self.request_preview()
     def refresh_hdr_scope(self):
         if not hasattr(self,'hdr_histogram'):return
+        enabled=self.loaded and not self.original_action.isChecked() and (bool(self.p.get('hdr_enabled')) or self.hdr_canvas.active)
+        self.histogram.set_hdr_bins(getattr(self,'hdr_hist_data',None),enabled,
+                                    self.hdr_canvas.headroom if self.hdr_canvas.active else None)
         info=getattr(self.hdr_canvas,'info',{})
         self.hdr_histogram.set_data(getattr(self,'hdr_scope_linear',None),getattr(self.hdr_canvas,'headroom',0))
         if self.hdr_canvas.active:
             _ui(self.hdr_status.setText,_tf('HDR 显示：{0}\n参考白 {1:.0f} nits · 映射峰值 {2:.0f} nits',info.get('name',''),self.hdr_canvas.reference_white,self.hdr_canvas.peak_nits))
         else:_ui(self.hdr_status.setText,_t('当前为 SDR 显示；可继续 HDR 调色与导出。'))
+        from hdr_advanced import report
+        stats=report(getattr(self,'hdr_scope_linear',None))
+        state=_t('真实 HDR 显示') if self.hdr_canvas.active and not self.hdr_canvas.sdr_proof else _t('SDR 对照显示') if self.hdr_canvas.active else _t('当前为 SDR 显示')
+        text=state+(_t(' · HDR 调色已启用') if self.p.get('hdr_enabled') else _t(' · HDR 调色未启用'))
+        if stats:text+=_tf('\nRGB 峰值 {0:+.2f} EV · HDR 像素 {1:.1f}%',stats['rgb_peak_ev'],stats['hdr_fraction']*100)
+        if self.hdr_canvas.active:text+=_tf('\n屏幕余量 +{0:.1f} EV',self.hdr_canvas.headroom)
+        _ui(self.hdr_feedback.setText,text)
+        self.hdr_feedback.setStyleSheet('color:#C77D4A;' if self.hdr_canvas.active and not self.hdr_canvas.sdr_proof else 'color:#92918D;')
     def hdr_canvas_failed(self,error):
         self.hdr_canvas.stop();self.hdr_canvas_action.blockSignals(True);self.hdr_canvas_action.setChecked(False);self.hdr_canvas_action.blockSignals(False)
         for action in (self.proof_action,self.clipping_action):action.setEnabled(True)
@@ -1372,13 +1510,15 @@ class MainWindow(QMainWindow):
             if old is not None:old.close()
             self.hdr_preview_dialog=HDRPreview(result,self);self.hdr_preview_dialog.show()
         self.command(lambda c,p:model.hdr_preview(value),done,_t('正在准备 HDR 屏幕预览…'))
-    def export_to(self,path):
+    def export_to(self,path,compression='deflate'):
         value=copy.deepcopy(self.p)
+        jpeg=self.jpeg_export.isChecked()
         def done(result):
             self.last_export=result;_ui(self.last_path_label.setText, _t('已保存：\n')+result)
             _ui(self.output_edit.setText, str(Path(result).parent));self.settings.setValue('output',self.output_edit.text())
-            _ui(self.statusBar().showMessage, _t('16bit TIFF 与完整参数配方已保存：')+result)
-        self.command(lambda c,p:model.export_image(path,value),done,_t('正在导出全尺寸 TIFF…'),'export')
+            _ui(self.statusBar().showMessage, (_t('已保存 TIFF 和 JPEG：') if jpeg else _t('16 位 TIFF 已保存：'))+result)
+        self.command(lambda c,p:model.export_image(path,value,compression=compression,
+                     progress=lambda done,total:p(done,total,''),jpeg=jpeg),done,_t('正在导出全尺寸 TIFF…'),'export')
     def batch_dialog(self):
         if not self.info.get('strip'):return
         folder=_ui(QFileDialog.getExistingDirectory, self,_t('选择整卷输出位置'),self.output_edit.text())
@@ -1524,7 +1664,7 @@ class MainWindow(QMainWindow):
         path=self.project_path
         if save_as or not path:
             default=path or str(Path(self.output_edit.text())/(Path(self.info['path']).stem+'.filmproj'))
-            path,_=_ui(QFileDialog.getSaveFileName, self,_t('保存整卷工程'),default,_t('FilmInvert 工程 (*.filmproj)'))
+            path,_=_ui(QFileDialog.getSaveFileName, self,_t('保存整卷工程'),default,_tf('{0} 工程 (*.filmproj)',APP_NAME))
         if path:
             if not path.lower().endswith('.filmproj'):path+='.filmproj'
             self.save_project_to(path)
@@ -1537,7 +1677,7 @@ class MainWindow(QMainWindow):
             _ui(self.statusBar().showMessage, _t('整卷工程已保存（各帧参数、模板、帧位置）：')+saved)
         self.command(lambda c,p:model.save_project(path,value,options),done,_t('正在保存整卷工程…'))
     def open_project_dialog(self):
-        path,_=_ui(QFileDialog.getOpenFileName, self,_t('打开整卷工程'),self.project_path or self.output_edit.text(),_t('FilmInvert 工程 (*.filmproj)'))
+        path,_=_ui(QFileDialog.getOpenFileName, self,_t('打开整卷工程'),self.project_path or self.output_edit.text(),_tf('{0} 工程 (*.filmproj)',APP_NAME))
         if path:self.open_project_path(path)
     def open_project_path(self,path,source_override=None,session=False):
         try:

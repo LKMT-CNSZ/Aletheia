@@ -9,6 +9,7 @@ import platform
 import sys
 import tempfile
 import traceback
+from app_paths import APP_NAME
 
 APP=Path(__file__).resolve().parent
 BUNDLE=APP.parent
@@ -44,7 +45,7 @@ def verify_bundle():
 
 def diagnose():
     target=report_path()
-    report={'application':json.loads((BUNDLE/'portable-layout.json').read_text('utf-8'))['version'],'python':sys.version,'os':platform.platform(),
+    report={'name':APP_NAME,'application':json.loads((BUNDLE/'portable-layout.json').read_text('utf-8'))['version'],'python':sys.version,'os':platform.platform(),
             'data_directory':str(target.parent),'machine':platform.machine(),'isolated':bool(sys.flags.isolated),
             'runtime':str(Path(sys.executable).relative_to(BUNDLE)),'imports':{}}
     try:
@@ -99,7 +100,7 @@ def main():
         target.write_text(json.dumps({'status':'startup_failed','python':sys.version,'error':error},ensure_ascii=False,indent=2),encoding='utf-8')
         if os.name=='nt':
             ctypes.windll.user32.MessageBoxW(None,'程序未能启动。\n\n'+error.strip().splitlines()[-1]+'\n\n诊断文件：'+str(target),
-                                            'FilmInvert Native · 启动诊断',0x10)
+                                            f'{APP_NAME} · 启动诊断',0x10)
         elif sys.stderr:sys.stderr.write(error)
         return 1
 

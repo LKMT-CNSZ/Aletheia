@@ -6,7 +6,7 @@ from PySide6.QtCore import QObject,Signal,QTimer,QProcess,Qt,QUrl,QSize
 from PySide6.QtGui import QPixmap,QDesktopServices
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QGridLayout,QFormLayout,QLabel,QPushButton,
  QLineEdit,QComboBox,QCheckBox,QDoubleSpinBox,QTableWidget,QTableWidgetItem,QAbstractItemView,
- QFileDialog,QTabWidget,QWidget,QInputDialog,QMessageBox,QScrollArea)
+ QFileDialog,QTabWidget,QWidget,QInputDialog,QMessageBox,QScrollArea,QProgressBar)
 from batch_store import BatchStore,FIELDS
 from native_widgets import monitor_image,photo_icon
 from native_efficiency import PhotoFilters,EditingKeys,catalog,phase,job_states
@@ -16,6 +16,7 @@ INPUT={'single':_t('单张'),'strip':_t('整条'),'auto':_t('自动')}
 STATUS={'idle':_t('等待下一阶段'),'paused':_t('已暂停'),'running':_t('处理中'),'queued':_t('待导出'),'failed':_t('失败'),'completed':_t('已完成')}
 FLAGS={'none':_t('未标记'),'pick':_t('精选'),'reject':_t('弃选')}
 STEP={'check':_t('检查原片'),'prepare':_t('独立准备'),'style':_t('应用组风格'),'preview':_t('刷新校样'),'report':_t('生成汇总')}
+STEP['negative_color']=_t('自动分区校色')
 FIELD_NAMES={'style':_t('胶片 / 反相风格'),'wb':_t('白平衡'),'exposure':_t('曝光'),'tone':_t('影调 / HSL / HDR'),'output':_t('输出空间'),'calibration':_t('色卡配置')}
 
 class BatchController(QObject):
@@ -23,7 +24,6 @@ class BatchController(QObject):
     def __init__(self,parent):
         super().__init__(parent);self.window=parent;self.store=parent.batch_store;self.process=None;self.waiting=False
         self.batch=None;self.operation=None;self.errors='';self.store.recover()
-        parent.queue_controller.stopped.connect(self.scan_reports)
     def running(self):return self.process is not None or self.waiting
     def start(self,identifier,operation,ids=None,overwrite=False):
         if self.running():raise ValueError(_t('请先暂停或等待当前批次步骤'))
@@ -78,18 +78,6 @@ class BatchController(QObject):
             if process and operation!='report':w.loaded=False
             QTimer.singleShot(0,w.close)
         elif operation!='report' and identifier:w.reload_workflow_asset(identifier)
-        if not w.closing:QTimer.singleShot(400,self.scan_reports)
-    def scan_reports(self):
-        if self.running() or self.window.closing or self.window.queue_controller.running():return
-        from batch_engine import export_fingerprint
-        for data in self.store.list():
-            jobs=[self.store.studio.get_job(i['job']) for i in data['items'] if i.get('job')]
-            if jobs and all(j['status'] in ('completed','failed') for j in jobs):
-                fingerprint=export_fingerprint(self.store.studio,data)
-                if (data.get('report') or {}).get('fingerprint')!=fingerprint and (data.get('report_error') or {}).get('fingerprint')!=fingerprint:
-                    try:self.start(data['id'],'report')
-                    except ValueError:pass
-                    return
 
 class ProofDialog(QDialog):
     def __init__(self,items,parent,count):
@@ -142,12 +130,12 @@ class BatchDialog(QDialog):
         self.add_button(line,_t('设置选中项'),self.set_items);layout.addLayout(line)
         line=QHBoxLayout()
         for text,fn in [(_t('打开选中微调'),self.open_item),(_t('跳过'),lambda:self.flag_items(True)),(_t('恢复参与'),lambda:self.flag_items(False)),(_t('移出批次'),self.remove_items),(_t('评级 / 精选…'),self.metadata)]:self.add_button(line,text,fn)
-        self.add_button(line,_t('重新准备选中…'),self.reprepare);self.add_button(line,_t('仅重试失败项'),self.retry_failed);layout.addLayout(line)
+        self.add_button(line,_t('重新准备选中…'),self.reprepare);self.add_button(line,_t('自动分区校色…'),self.correct_negative_color);self.add_button(line,_t('仅重试失败项'),self.retry_failed);layout.addLayout(line)
         page=QWidget();layout=QVBoxLayout(page);_ui(self.tabs.addTab, page,_t('2 · 规则与分组同步'))
         form=QFormLayout();self.input_mode=QComboBox();_ui(self.input_mode.addItem, _t('每文件单张'),'single');_ui(self.input_mode.addItem, _t('整条胶片'),'strip');_ui(self.input_mode.addItem, _t('自动识别'),'auto')
         self.color=QComboBox();from input_color import CHOICES
         for key,title in CHOICES.items():_ui(self.color.addItem, _t(title),key)
-        self.space=QComboBox();_ui(self.space.addItem, _t('线性 sRGB'),'srgb');_ui(self.space.addItem, _t('线性 ProPhoto'),'prophoto')
+        self.space=QComboBox();_ui(self.space.addItem, _t('自动识别'),'auto');_ui(self.space.addItem, _t('线性 sRGB'),'srgb');_ui(self.space.addItem, _t('线性 ProPhoto'),'prophoto')
         self.method=QComboBox()
         for title,key in [(_t('各自自动反相；保留已有编辑'),'auto'),(_t('按组参考同步所选参数'),'sync'),(_t('只使用已有编辑'),'existing')]:_ui(self.method.addItem, title,key)
         self.stop=QComboBox()
@@ -172,11 +160,15 @@ class BatchDialog(QDialog):
         for text,fn in [(_t('4 图校样'),lambda:self.proof(4)),(_t('9 图校样'),lambda:self.proof(9)),(_t('刷新选中校样'),lambda:self.run('preview')),(_t('标记选中已复核'),self.review)]:self.add_button(line,text,fn)
         layout.addLayout(line);form=QFormLayout();self.output=QLineEdit();line=QHBoxLayout();line.addWidget(self.output,1);self.add_button(line,_t('选择…'),self.output_folder);_ui(form.addRow, _t('批次输出目录'),line)
         self.naming=QLineEdit();_ui(form.addRow, _t('命名模板'),self.naming);layout.addLayout(form)
-        line=QHBoxLayout();self.whole=_ui(QCheckBox, _t('包含每个文件的全部帧'));self.review_required=_ui(QCheckBox, _t('加入队列前要求人工复核'));self.group_dirs=_ui(QCheckBox, _t('按组输出子目录'))
-        for widget in (self.whole,self.review_required,self.group_dirs):line.addWidget(widget)
+        line=QHBoxLayout();self.whole=_ui(QCheckBox, _t('包含每个文件的全部帧'));self.review_required=_ui(QCheckBox, _t('加入队列前要求人工复核'))
+        self.jpeg_export=_ui(QCheckBox,_t('同时导出 JPEG'))
+        for widget in (self.whole,self.review_required,self.jpeg_export):line.addWidget(widget)
         layout.addLayout(line);line=QHBoxLayout()
         for text,fn in [(_t('保存导出设置'),self.save_settings),(_t('固定参数并加入导出队列'),self.enqueue),(_t('开始 / 继续本批次导出'),self.start_exports),(_t('暂停导出队列'),parent.queue_controller.pause)]:self.add_button(line,text,fn)
-        layout.addLayout(line);line=QHBoxLayout()
+        layout.addLayout(line)
+        self.export_progress=QProgressBar();self.export_progress.hide()
+        _ui(self.export_progress.setAccessibleName,_t('导出进度'));layout.addWidget(self.export_progress)
+        line=QHBoxLayout()
         for text,fn in [(_t('新建下一轮导出…'),self.new_round),(_t('生成联系表 / 汇总'),lambda:self.run('report')),(_t('打开最新汇总'),self.open_report)]:self.add_button(line,text,fn)
         layout.addLayout(line);self.history_label=_ui(QLabel);self.history_label.setWordWrap(True);layout.addWidget(self.history_label);layout.addStretch()
         line=QHBoxLayout();self.run_buttons=[]
@@ -185,6 +177,7 @@ class BatchDialog(QDialog):
         self.pause_button=self.add_button(line,_t('暂停准备 / 同步'),self.controller.pause);outer.addLayout(line)
         self.message=_ui(QLabel, _t('默认各图独立估片基 / 测光；裁切、校直、透视和局部修复不会跨图复制。重开批次先检查原片身份。'));self.message.setWordWrap(True);outer.addWidget(self.message)
         self.controller.message.connect(lambda text:_ui(self.message.setText,text));self.controller.changed.connect(self.refresh)
+        parent.queue_controller.changed.connect(self.refresh)
         self.timer=QTimer(self);self.timer.setInterval(1500);self.timer.timeout.connect(self.refresh);self.timer.start()
         self.editing_keys=EditingKeys(self,self.editing_shortcut);self._table_signature=None
         self.reload_batches()
@@ -247,6 +240,8 @@ class BatchDialog(QDialog):
         if not self.identifier:return
         data=self.store.get(self.identifier);selected=set(self.selected());self.refreshing=True
         assets={a['id']:a for a in catalog(self.store.studio,[i['asset'] for i in data['items']])};jobs=job_states(self.store.studio)
+        from native_studio import set_export_progress
+        set_export_progress(self.export_progress,jobs.values(),{item['job'] for item in data['items'] if item.get('job')})
         self.filters.groups(i['group'] for i in data['items']);visible=[];frames=0;ready=0
         for item in data['items']:
             asset=assets[item['asset']];snapshot=item['snapshot'];count=snapshot['frame_count'] if snapshot else None
@@ -277,7 +272,7 @@ class BatchDialog(QDialog):
         for button in self.run_buttons:button.setEnabled(not busy)
         self.pause_button.setEnabled(busy)
         _ui(self.summary.setText, _tf('{0} · {1} 个文件 · 已准备 {2} · 勾选项已知 {3} 帧 · {4}。未准备文件帧数待识别；入队时会显示准确数量。', data["name"], len(data["items"]), ready, frames, STATUS[data["status"]]))
-        history=self.store.history(self.identifier);_ui(self.history_label.setText, _t('批次修改历史：\n')+'\n'.join(h['label'].split(' · ')[0] for h in history[:8]))
+        history=self.store.history(self.identifier);_ui(self.history_label.setText, _t('批次修改历史：\n')+'\n'.join(_t(h['label'].split(' · ')[0]) for h in history[:8]))
     def _select_row(self,row):
         from PySide6.QtCore import QItemSelectionModel
         self.table.selectionModel().select(self.table.model().index(row,1),QItemSelectionModel.SelectionFlag.Select|QItemSelectionModel.SelectionFlag.Rows)
@@ -286,14 +281,15 @@ class BatchDialog(QDialog):
         for widget,key in ((self.input_mode,'input_mode'),(self.color,'input_color'),(self.space,'working_space'),(self.method,'method'),(self.stop,'stop_after'),(self.sync_mode,'sync_mode'),(self.rule,'group_rule')):widget.setCurrentIndex(max(0,widget.findData(c[key])))
         for key,check in self.field_checks.items():check.setChecked(key in c['fields'])
         self.delta.setValue(c['exposure_delta']);_ui(self.naming.setText, c['template']);_ui(self.output.setText, c['output'])
-        self.whole.setChecked(c['whole_roll']);self.review_required.setChecked(c['require_review']);self.group_dirs.setChecked(c['group_directories'])
+        self.whole.setChecked(c['whole_roll']);self.review_required.setChecked(c['require_review'])
+        self.jpeg_export.setChecked(c.get('jpeg',False))
     def save_settings(self):
         if not self.identifier:return
         def apply():
             c=self.store.get(self.identifier)['config']
             for widget,key in ((self.input_mode,'input_mode'),(self.color,'input_color'),(self.space,'working_space'),(self.method,'method'),(self.stop,'stop_after'),(self.sync_mode,'sync_mode'),(self.rule,'group_rule')):c[key]=widget.currentData()
             c.update(fields=[k for k,v in self.field_checks.items() if v.isChecked()],exposure_delta=self.delta.value(),template=self.naming.text(),output=self.output.text(),
-                     whole_roll=self.whole.isChecked(),require_review=self.review_required.isChecked(),group_directories=self.group_dirs.isChecked())
+                     whole_roll=self.whole.isChecked(),require_review=self.review_required.isChecked(),jpeg=self.jpeg_export.isChecked())
             self.store.configure(self.identifier,c);_ui(self.message.setText, _t('设置已保存；不会改变已加入队列的参数快照'))
             return True
         return self.attempt(apply)
@@ -390,6 +386,11 @@ class BatchDialog(QDialog):
         items=[i['name'] for i in self.store.get(self.identifier)['items'] if i['asset'] in ids]
         text=_t('将重新估片基 / 测光并重置以下照片的已有调色、几何和局部修复；可用批次撤销恢复。\n\n')+'\n'.join(items[:30])
         if _ui(QMessageBox.question, self,_t('重新准备并替换这些编辑'),text)==QMessageBox.StandardButton.Yes:self.run('prepare',ids,True)
+    def correct_negative_color(self):
+        if not self.identifier:return
+        text=_t('将重新估算彩色负片的片基、白平衡和分区校色，保留裁切、曝光及局部编辑。作用于选中的参与项，未选中时作用于当前筛选中的参与项。可通过批次撤销恢复。')
+        if _ui(QMessageBox.question,self,_t('自动分区校色'),text)==QMessageBox.StandardButton.Yes:
+            self.run('negative_color')
     def retry_failed(self):
         visible=set(self.visible_ids());ids=[i['asset'] for i in self.store.get(self.identifier)['items'] if i['error'] and i['asset'] in visible]
         self.run('pipeline',ids)

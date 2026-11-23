@@ -1,8 +1,6 @@
 # Aletheia
 
-Download the **3.1.1 stable release**: [Windows installer, portable ZIP and matching source](https://github.com/LKMT-CNSZ/Aletheia/releases/tag/v3.1.1).
-
-**3.1.1 stable release:** film-edge exclusion for automatic metering; single-image highlights/shadows/whites/blacks; local tone mapping; multi-exposure HDR merging; linear ICC-tagged float32 HDR TIFF; native Windows scRGB HDR preview. Read [the HDR guide](HDR-GUIDE.md). HDR display is experimental: FP16 creation and SDR refusal were tested, while visual validation on HDR hardware is pending.
+**3.2.0 stable release.** Download the [Windows installer, portable ZIP, source and checksums](https://github.com/LKMT-CNSZ/Aletheia/releases/tag/v3.2.0).
 
 **A local film inversion and photo editing tool for Windows.**
 
@@ -24,16 +22,10 @@ Since version **3.0.1**, the app offers a **Simplified Chinese / English** inter
 - **Batch workflow:** per-photo preparation, grouping, selected-parameter synchronization, independent EV adjustments, 4-up / 9-up proofing, visual review and an export queue with frozen parameter snapshots.
 - **Delivery:** 16-bit TIFF, parameter recipes, film projects, PNG contact sheets, batch summaries and project transfer packages that can include source files.
 
-## Download
-
-Download the installer, portable ZIP, matching source and SHA256 checksums from [v3.1.1](https://github.com/LKMT-CNSZ/Aletheia/releases/tag/v3.1.1). This is the stable release.
-
-This build adds a 1.2-second mascot film-development startup animation, a 1.6-second soft reveal on each frame change, a fix for overlapping navigation cards, and unified SDR TIFF, float32 HDR TIFF and Windows HDR JXR export.
-
 ## Get started
 
 1. Install the Windows x64 setup, or fully extract the portable ZIP. No separate Python installation is needed.
-2. For the portable edition, run `Launch FilmInvert.cmd` or `启动胶片工作室.cmd` from the extracted folder.
+2. For the portable edition, run `启动 Aletheia.cmd` from the extracted folder.
 3. Choose **English** in the toolbar. Open a photo with **Ctrl+O**, or drop multiple photos to populate the bottom navigator.
 4. Choose an input mode and negative type. Check the film base, white balance and exposure before refining curves and color.
 5. Use **Film edges / frames** for whole-strip scans; crop, straighten or correct perspective for individual frames.
@@ -81,19 +73,20 @@ Processing runs locally. The native desktop application does not start a web ser
 
 ## Short description for GitHub
 
-Aletheia is a local film inversion and photo editing tool for Windows, with Chinese and English interfaces. Supports color and B&W negatives, RAW and whole-strip scans, independent photo editing, batch proofing and export, and ICC-tagged 16-bit TIFF output. Available as an installer or portable ZIP.
+A local film inversion and photo editing tool for Windows, with Chinese and English interfaces. Supports color and B&W negatives, RAW and whole-strip scans, independent photo editing, batch proofing and export, and ICC-tagged 16-bit TIFF output. Available as an installer or portable ZIP.
 
 The toolbar **HDR canvas** switch enables native HDR directly in the editable main canvas. System HDR is required. Exposure, undo, sampling, zoom and photo navigation remain available. The histogram reports SDR output statistics; SDR proofing overlays are unavailable while the HDR canvas is active. Hardware visual QA is pending.
 
 If the reported display peak is missing or outside 80–10000 nits, HDR preview explicitly assumes 1000 nits and reports this in the status bar. Use Windows HDR Calibration to verify your display. This estimate never changes grading parameters or HDR master pixels.
 
-## Unified TIFF export
+## TIFF export and lossless compression
 
-The top Export TIFF button and Ctrl+Shift+S now offer SDR TIFF - 16bit and HDR TIFF - Float32 in the save dialog. HDR is selected by default when the main HDR canvas is active; the selected file type determines the output. HDR TIFF preserves linear floating-point highlights and includes a linear ICC profile. The existing File menu HDR export entry uses the same dialog. Roll and batch exports remain SDR.
+Export TIFF / HDR offers SDR 16-bit and HDR Float32 TIFF, each with **Lossless ZIP** or **Uncompressed**. Lossless ZIP is the default, and the last compression choice is remembered. An active HDR canvas defaults to HDR TIFF; the explicit linear HDR TIFF menu also selects HDR. JPEG XR and Ultra HDR JPEG are no longer offered. Single-photo export can also save a companion SDR JPEG. Roll and batch exports remain lossless SDR 16-bit TIFF.
 
-## Windows HDR delivery
+Standard TIFF Deflate compression preserves resolution, sample bits, ICC profiles and processing metadata. HDR remains 32-bit floating-point RGB with above-white highlights and can be reopened. Uncompressed 4320 x 5760 RGB pixels alone use 298,598,400 bytes; compression depends on content, grain and noise. HDR TIFF display brightness still depends on viewer support.
 
-Export TIFF / HDR offers Windows HDR - JPEG XR (*.jxr), selected by default when the HDR canvas is active. Native WIC encoding converts working primaries to linear sRGB and scales nominal-white pixels by 203/80 into absolute scRGB units. It does not bake in a monitor-specific shoulder. Float TIFF remains the editing master; keep your project for further edits. JXR re-import is not supported yet. The codec uses Lossless mode but its float preprocessing can quantize values; bit-exact float preservation is not promised. Native encode/decode and export UI checks pass; the user opened the real JXR in Microsoft Photos and reported brightness closer to the Aletheia preview. This is user visual feedback, not instrument-based or cross-device validation. Other viewers may use different tone mapping.
+
+
 
 ## First-view reveal and frame navigation
 
@@ -111,7 +104,7 @@ A 1.2-second left-to-right soft reveal develops the supplied red-and-white masco
 
 ## Application icon
 
-The application window, splash taskbar icon, shortcuts and installer use the supplied red-and-white Aletheia film logo, with seven Windows ICO sizes from 16 to 256 pixels. The 1.2-second startup reveal continues to show the film mascot.
+The application window, splash taskbar icon, shortcuts and installer use the supplied red-and-white FilmInvert film logo, with seven Windows ICO sizes from 16 to 256 pixels. The 1.2-second startup reveal continues to show the film mascot.
 
 
 ## Shortcut icon cache fix
@@ -123,19 +116,15 @@ Shortcuts use a dedicated ICO path containing the artwork hash, then notify Wind
 
 ## HDR display adaptation and grading
 
-HDR display adaptation and photo grading are managed separately. Enable HDR grading in the HDR tab to save highlight strength, start, transition, HDR range and SDR rendition with each photo/frame. Projects, recipes, undo and batch tone synchronization retain these values. HDR TIFF and JXR use the same graded floating-point master. SDR previews and TIFF exports use the same master with SDR rendition mapping. Disabled defaults preserve the legacy pipeline.
+This version replaces the global preview-only boost; it is not migrated into photos. Enable HDR grading in the HDR tab to save highlight strength, start, transition, HDR range and SDR rendition with each photo/frame. Projects, recipes, undo and batch tone synchronization retain these values. HDR TIFF stores the graded floating-point master. SDR previews and TIFF exports use the same master with SDR rendition mapping. Disabled defaults preserve the legacy pipeline.
 
-HDR grading requires project version 9 / recipe version 7; older applications reject these versions. Display adaptation reads the window monitor, Windows SDR reference white and DXGI peak report, selects its GPU, and rechecks display changes. Per-display manual overrides stay on this computer. Missing/invalid reports use labeled estimates; calibrate and verify them. JXR keeps its authored 203-nit nominal white and does not bake device-specific adaptation. Viewer appearance may differ.
+HDR grading requires project version 9 / recipe version 7; older applications reject these versions. Display adaptation reads the window monitor, Windows SDR reference white and DXGI peak report, selects its GPU, and rechecks display changes. Per-display manual overrides stay on this computer. Missing/invalid reports use labeled estimates; calibrate and verify them. HDR TIFF keeps its authored 203-nit nominal white and does not bake device-specific adaptation. Viewer appearance may differ.
 
 Compare SDR output, inspect the extended RGB-maximum histogram, or visualize HDR highlights in yellow and beyond-display values in red. 0 EV is nominal white. SDR displays can edit and export but cannot validate physical HDR appearance. Failure dialogs retain technical details and a Windows settings shortcut. HDR display remains experimental pending cross-device visual acceptance.
 
 
-## Film HDR presets and Ultra HDR JPEG
+## Film HDR presets
 
-Choose Natural, Clear or Soft in the HDR tab. Each enables HDR grading and changes only its HDR/SDR rendition controls, retaining exposure, white balance, curves, film settings and local edits. Natural gives a modest highlight lift, Clear a stronger lift, and Soft a smaller range with a longer transition. Undo and fine-tune the result; projects, recipes and batch tone synchronization retain the values. Presets cannot recover information lost during capture or scanning.
+Natural, Clear, Soft, Bright (color-safe) and Highlight lift enable HDR grading while preserving exposure, white balance, ordinary curves, HSL, film settings and local edits. They reset creative punch, highlight fading and HDR/SDR rendition controls, and enable color-safe SDR mapping. Undo, projects, recipes and batch tone synchronization retain these settings. Existing projects are not rewritten.
 
-In **Export TIFF / HDR**, select **Ultra HDR JPEG - SDR + Gain Map** as the file type and save a `.jpg`. It contains an ICC-tagged sRGB SDR base and an ISO 21496-1 multichannel gain map. Ordinary JPEG viewers show the base; HDR viewers supporting this gain-map standard can show extended highlights. JPEG is lossy: retain float HDR TIFF as the master. Windows JXR remains available. This encoder writes ISO gain-map metadata without legacy XMP gain-map metadata. Device, app and social-platform compatibility requires testing; transcoding may strip the gain map.
-
-The base uses the matching SDR rendition, including SDR highlight compression/exposure when HDR grading is enabled, or the legacy SDR pipeline when disabled. The HDR nominal white is 203 nits; gain-map capacity follows content peak rather than the encoder's 10000-nit default. Per-display calibration is never baked in. Export converts to sRGB primaries and clips out-of-gamut colors; use HDR TIFF to retain wide-gamut master data. Maximum JPEG dimension is 8192 pixels and peak is 10000 nits. Oversized/out-of-range exports fail explicitly without silently resizing.
-
-The pinned official imagecodecs 2026.10.10 Windows wheel embeds Google libultrahdr 2.0.2. Only the Ultra HDR codec and required helpers are shipped with upstream licenses and SHA256 provenance. No system codec installation is required. Cross-device HDR visual acceptance is still pending.
+Choose **HDR TIFF - Float32 · Lossless ZIP** to save the floating-point master. SDR preview and SDR TIFF use the same master with SDR rendition mapping; color-safe mapping compresses highlights with a common RGB gain and does not alter the HDR master. Nominal white is 1.0 = 203 nits, independent of device-specific display adaptation. Presets cannot recover information lost during capture or scanning.

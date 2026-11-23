@@ -66,7 +66,8 @@ else:
     store=StudioStore(out/'profile');asset=store.capture(model.read_project(project))
     job=store.enqueue([asset],out/'exports',False)[0]
     assert timed('worker',lambda:studio_worker.execute(store,job))=='completed'
-    path=Path(store.get_job(job)['destination'])/'frame-0001.tif'
+    record=store.get_job(job)
+    path=Path(record['destination'])/next(iter(record['outputs'].values()))['tiff']['name']
     a=read_tiff(path);report.update(shape=list(a.shape),sha256=digest(a),output=str(path))
     with Image.open(path) as im:assert im.info.get('icc_profile');report['icc_sha256']=hashlib.sha256(im.info['icc_profile']).hexdigest()
     report['source_sha256']=model.engine.STATE['native_source']['sha256']

@@ -155,11 +155,11 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build/tests',prefix='perspective-') a
     else:raise AssertionError('perspective silently accepted in old recipe')
     snapshot=model.project_snapshot(window.p);store=StudioStore(folder/'studio');asset=store.capture(snapshot)
     job=store.enqueue([asset],folder/'output',False)[0];assert studio_worker.execute(store,job)=='completed'
-    output=Path(store.get_job(job)['destination'])/'frame-0001.tif'
+    output=Path(store.get_job(job)['destination'])/store.get_job(job)['outputs']['0']['tiff']['name']
     expected=(np.clip(core.process(original,model.params(edited)),0,1)*65535+.5).astype(np.uint16)
     assert np.array_equal(read_tiff(output),expected)
     with Image.open(output) as im:assert im.info.get('icc_profile')
-    assert json.loads(Path(str(output)+'.json').read_text('utf-8'))['version']==6
+    assert not Path(str(output)+'.json').exists()
     project_transfer.pack(snapshot,folder/'perspective.filmtransfer')
     moved=project_transfer.unpack(folder/'perspective.filmtransfer',folder/'moved')
     assert model.open_project(moved['project'])['params']['perspective']==spec

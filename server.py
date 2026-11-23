@@ -123,7 +123,8 @@ def do_open(path: str, input_mode='auto', manual=None) -> dict:
     return install_loaded(path,load(path),input_mode,manual)
 
 
-def install_loaded(path, ld, input_mode='auto', manual=None, legacy_detection=False):
+def install_loaded(path, ld, input_mode='auto', manual=None, legacy_detection=False, auto_color=True,
+                   detected_layout=None):
     """Install a cached decoded original or a newly loaded file."""
     if input_mode not in ('auto','single','strip'):raise ValueError('输入模式无效')
     if manual is not None and input_mode!='strip':raise ValueError('手动选框需要整条输入模式')
@@ -136,16 +137,23 @@ def install_loaded(path, ld, input_mode='auto', manual=None, legacy_detection=Fa
     elif input_mode=='single':
         layout=None
     else:
-        layout=(strip.detect_layout_legacy if legacy_detection else strip.detect_layout)(lin)
+        layout=detected_layout
+        if layout is None:
+            detector=strip.detect_layout_legacy if legacy_detection else strip.detect_layout
+            layout=detector(lin)
         if input_mode=='strip' and layout.frame_count==0:
             h,w=lin.shape[:2]
             layout=strip.StripLayout([(0,w)],[[]],[core.auto_base(lin)],[[(0,h)]],0)
     is_strip = layout is not None and (input_mode=='strip' or layout.frame_count>1 or layout.kind=='window')
+    edge_base = None
+    if not ld.hdr_kind and not legacy_detection:
+        edge_base = strip.film_base_from_edges(lin)
 
     with LOCK:
         FLAT_CACHE.clear()
         STATE["frame_params"] = {}
         STATE["roll_params"] = None
+        STATE['auto_color'] = False
         STATE["auto_meter"] = True
         STATE['native_loaded']=ld
         STATE['native_input']={'mode':input_mode,'manual':manual}
@@ -154,10 +162,18 @@ def install_loaded(path, ld, input_mode='auto', manual=None, legacy_detection=Fa
 
     if is_strip:
         si, fi, arr = strip.extract_one(lin, layout, 0)
+        if layout.kind == 'single' and edge_base is not None:
+            layout.bases[si] = edge_base
         base = layout.bases[si]
         _, span = core.auto_anchor(arr, base,'edges')
         p = Params(mode="color_negative", base=base, anchor=None, span=span, slope=1.60,meter_mode='edges')
         p.working_space=ld.working_space
+        preview = downscale(arr, PREVIEW_MAX)
+        if edge_base is not None and ld.is_raw and not core.base_clipped_channels(base):
+            p.wb_gain = core.initial_negative_wb(preview, p)
+        if auto_color and not legacy_detection:
+            from tone_balance import fit_import
+            p = fit_import(arr,p,ld.is_raw)
         with LOCK:
             THUMB_CACHE.clear()
             STATE["strip_img"] = lin
@@ -165,8 +181,9 @@ def install_loaded(path, ld, input_mode='auto', manual=None, legacy_detection=Fa
             STATE["frame_index"] = 0
             STATE["path"] = path
             STATE["full"] = arr
-            STATE["preview"] = downscale(arr, PREVIEW_MAX)
+            STATE["preview"] = preview
             STATE["params"] = p
+            STATE['auto_color'] = 'density' in p.tone_balance
             STATE["info"] = {
                 "path": path,
                 "name": os.path.basename(path),
@@ -180,7 +197,9 @@ def install_loaded(path, ld, input_mode='auto', manual=None, legacy_detection=Fa
                 "input_mode": input_mode,
                 "base": base,
                 "anchor": None,
-                "span": span,
+                "span": p.span,
+                "initial_negative_wb": list(p.wb_gain) if edge_base is not None and ld.is_raw else None,
+                "initial_negative_base": list(base),
                 "channel_health": core.detect_channel_health(downscale(arr, 900)),
                 "strip": {
                     "frames": layout.frame_count,
@@ -194,12 +213,18 @@ def install_loaded(path, ld, input_mode='auto', manual=None, legacy_detection=Fa
             }
         return STATE["info"]
 
-    base = core.auto_base(lin)
+    base = edge_base if edge_base is not None else core.auto_base(lin)
     anchor, span = core.auto_anchor(lin,base,'edges')
     p = Params(mode="color_negative", base=base, anchor=anchor, span=span, slope=1.60,meter_mode='edges')
     if ld.hdr_kind:p.scene_hdr=True
     if ld.hdr_kind=='positive':p=Params(mode='positive',meter_mode='edges',scene_hdr=True,black=0.,white=1.,tone_rolloff=.75)
     p.working_space=ld.working_space
+    preview = downscale(lin, PREVIEW_MAX)
+    if edge_base is not None and ld.is_raw:
+        p.wb_gain = core.initial_negative_wb(preview, p)
+    if auto_color and not legacy_detection:
+        from tone_balance import fit_import
+        p = fit_import(lin,p,ld.is_raw)
 
     with LOCK:
         STATE["strip_img"] = None
@@ -208,7 +233,6 @@ def install_loaded(path, ld, input_mode='auto', manual=None, legacy_detection=Fa
         STATE["path"] = path
         STATE["full"] = lin
         THUMB_CACHE.clear()
-        preview = downscale(lin, PREVIEW_MAX)
         STATE["preview"] = preview
         STATE["params"] = p
         health = core.detect_channel_health(preview)
@@ -225,7 +249,9 @@ def install_loaded(path, ld, input_mode='auto', manual=None, legacy_detection=Fa
             "input_mode": input_mode,
             "base": base,
             "anchor": anchor,
-            "span": span,
+            "span": p.span,
+            "initial_negative_wb": list(p.wb_gain) if edge_base is not None and ld.is_raw else None,
+            "initial_negative_base": list(base),
             "channel_health": health,
             "strip": None,
         }
@@ -239,8 +265,9 @@ def strip_field(img, layout, index):
         cached = FLAT_CACHE.get(key)
     if cached is not None:
         return cached
+    scan = strip.analysis_view(img,layout)
     x0,x1 = layout.strips[si]
-    patches = [img[max(0,g-3):min(img.shape[0],g+4),x0:x1] for g in layout.gaps[si]]
+    patches = [scan[max(0,g-3):min(scan.shape[0],g+4),x0:x1] for g in layout.gaps[si]]
     if not patches:
         raise ValueError('此胶片条未检测到可靠帧间隙，不能自动估计平场')
     samples = np.concatenate(patches,axis=0)
@@ -249,6 +276,8 @@ def strip_field(img, layout, index):
     if np.any(variation/np.maximum(np.median(profile,axis=0),1e-6) > .15):
         raise ValueError('帧间隙亮度不一致，无法可靠估计照明场')
     grid = np.asarray(restoration.reference_field(np.repeat(profile[None,...],8,axis=0)),np.float32)
+    if layout.horizontal:
+        grid = grid.swapaxes(0,1)
     if layout.rotation:
         grid = np.rot90(grid,k=-(layout.rotation//90))
     result = (grid.tolist(), np.median(profile,axis=0).astype(np.float32).tolist())
@@ -265,7 +294,9 @@ def prepare_params(p, img=None, layout=None, index=None):
     if p.flat_mode == 'strip':
         if img is None or layout is None:
             raise ValueError('片基照明校正仅用于整条胶片；单张图请导入参考平场')
-        p.flat_field = strip_field(img,layout,index)[0]
+        # A manual frame can reuse the grid measured at its original geometry.
+        if layout.kind != 'manual' or p.flat_field is None:
+            p.flat_field = strip_field(img,layout,index)[0]
     elif p.flat_mode == 'reference' and layout is not None:
         raise ValueError('参考平场仅用于单张图；整条扫描请使用片基照明校正')
     return p
@@ -279,7 +310,14 @@ def corrected_input(arr,p):
 LAST_EXPORT=None
 
 
-def export_pixels(path,arr,p):
+def write_jpeg(path,wide,working_space):
+    from file_io import io_path
+    rgb=colorio.convert(wide,'srgb',working_space)
+    pixels=(np.clip(rgb,0,1)*255+.5).astype(np.uint8)
+    Image.fromarray(pixels).save(io_path(path),'JPEG',quality=95,subsampling=0,icc_profile=colorio.icc_profile('srgb'))
+
+
+def export_pixels(path,arr,p,compression='deflate',progress=None,jpeg=None):
     from tiffio import write_tiff_strips,strip_rows
     from runtime_metrics import memory
     global LAST_EXPORT
@@ -287,8 +325,9 @@ def export_pixels(path,arr,p):
     LAST_EXPORT={'status':'running','input_shape':list(arr.shape),'output_space':p.output_space}
     try:
         wide=core.process(arr,p,target_space=p.working_space)
+        if jpeg is not None:write_jpeg(jpeg,wide,p.working_space)
         rows=strip_rows(wide.shape[1]);report={}
-        write_tiff_strips(path,wide.shape[:2],colorio.export_strips(wide,p.output_space,p.working_space,report,rows),icc_profile=colorio.icc_profile(p.output_space),rows=rows)
+        write_tiff_strips(path,wide.shape[:2],colorio.export_strips(wide,p.output_space,p.working_space,report,rows),icc_profile=colorio.icc_profile(p.output_space),rows=rows,compress=compression,progress=progress)
         LAST_EXPORT.update(status='completed',output_shape=list(wide.shape),strip_rows=rows)
         return {'space':p.output_space,'stage':'post_geometry_pre_target_clip','tolerance':1e-6,
                 'out_of_gamut_fraction':report['fraction'],'endpoint_fraction':report['endpoints']}
@@ -318,12 +357,36 @@ def do_flat_meter(data):
         raise ValueError('请先载入图片')
     corrected = corrected_input(lin,p)
     if p.flat_mode == 'strip':
-        p.base = strip_field(img,layout,index)[1]
+        base = p.base if layout.kind == 'manual' and p.base is not None else strip_field(img,layout,index)[1]
     elif layout is not None:
-        p.base = layout.bases[strip.frame_boxes(layout)[index][0]]
+        base = layout.bases[strip.frame_boxes(layout)[index][0]]
     else:
-        p.base = core.auto_base(corrected)
-    p.anchor,p.span = core.auto_anchor(corrected,p.base,p.meter_mode)
+        base = strip.film_base_from_edges(corrected) if p.mode == 'color_negative' and not p.scene_hdr else None
+        if base is None:
+            base = core.auto_base(corrected)
+    if p.mode != 'positive' and core.base_clipped_channels(base) and p.base is not None:
+        base = p.base
+    balance = p.tone_balance.get('density') if p.mode == 'color_negative' else None
+    if balance is not None:
+        # Range, fitted offsets and black/white levels share a density scale.
+        # Move only the basis of that scale when a different film base is measured.
+        old_base = np.asarray(p.base or [.5,.5,.5], dtype=np.float32)
+        delta = core.to_density(old_base) - core.to_density(np.asarray(base,dtype=np.float32))
+        if p.channel_repair and np.any(delta):
+            health = core.detect_channel_health(corrected)
+            if health['suggest']:
+                good = [c for c in range(3) if c not in health['bad']]
+                delta[health['bad']] = delta[good].mean()
+        offset = np.asarray(balance[0], dtype=np.float32) + delta
+        if np.any((offset < -.800001) | (offset > 1.500001)):
+            base = p.base
+        else:
+            p.tone_balance = {**p.tone_balance, 'density': [np.clip(offset,-.8,1.5).tolist(), balance[1]]}
+        if base is not None:
+            p.anchor,_ = core.auto_anchor(corrected,base,p.meter_mode)
+    else:
+        p.anchor,p.span = core.auto_anchor(corrected,base,p.meter_mode)
+    p.base = base
     with LOCK:
         STATE['params'] = p
     return {'params':p.__dict__}
@@ -365,10 +428,12 @@ def do_thumb(index: int) -> bytes:
     p = params_from(saved or roll) if saved is not None or roll is not None else Params(meter_mode=STATE.get('default_meter_mode','legacy'))
     if saved is None:
         p.base, p.anchor = base, None
-        if auto_meter or roll is None:
+        if (auto_meter or roll is None) and 'density' not in p.tone_balance:
             p.span = span
-    if saved is None and (auto_meter or roll is None):_,p.span=core.auto_anchor(small,base,p.meter_mode)
+    if saved is None and (auto_meter or roll is None) and 'density' not in p.tone_balance:_,p.span=core.auto_anchor(small,base,p.meter_mode)
     p = prepare_params(p,img,layout,index)
+    if saved is None and roll is None:
+        p = initial_frame_color(arr,p)
     out = core.process(small, p)
     jpg = encode_preview(out)
     with LOCK:
@@ -433,29 +498,32 @@ def do_frame(index: int, current: dict | None = None, keep_params: bool = True,
 
     si, fi, arr = strip.extract_one(img, layout, index)
     base = layout.bases[si]
-    _, span = core.auto_anchor(arr, base)
-    if keep_params:
-        p = params_from(previous.__dict__)
-    elif saved is not None:
+    carry = saved is None and keep_params
+    if saved is not None:
         p = params_from(saved)
-    elif roll is not None:
-        p = params_from(roll)
-    else:
-        p = Params(span=span,meter_mode=STATE.get('default_meter_mode','legacy'))
-    p.local_edits=copy.deepcopy((saved or {}).get('local_edits',[]))
-    if not keep_params and saved is not None:
         base = p.base or base
     else:
+        if carry:
+            p = params_from(previous.__dict__)
+        elif roll is not None:
+            p = params_from(roll)
+        else:
+            _,span = core.auto_anchor(arr,base)
+            p = Params(span=span,meter_mode=STATE.get('default_meter_mode','legacy'))
+        p.local_edits = []
+        if layout.kind == 'manual' and p.flat_mode == 'strip':
+            p.flat_mode,p.flat_strength,p.flat_field = 'off',0.,None
         p.base, p.anchor = list(base), None
-        if auto_meter:
-            p.span = span
-    if auto_meter and not (not keep_params and saved is not None):_,p.span=core.auto_anchor(arr,p.base,p.meter_mode)
+        if auto_meter and 'density' not in p.tone_balance:
+            _,p.span=core.auto_anchor(arr,base,p.meter_mode)
     p = prepare_params(p,img,layout,index)
-    if not (not keep_params and saved is not None):
+    if saved is None:
         if p.flat_mode == 'strip':
             p.base = strip_field(img,layout,index)[1]
-        if auto_meter and (p.flat_mode != 'off' or p.vignette > 0):
+        if auto_meter and 'density' not in p.tone_balance and (p.flat_mode != 'off' or p.vignette > 0):
             _,p.span = core.auto_anchor(corrected_input(arr,p),p.base,p.meter_mode)
+    if saved is None and roll is None and not carry:
+        p = initial_frame_color(arr,p)
 
     with LOCK:
         STATE["frame_index"] = index
@@ -468,13 +536,20 @@ def do_frame(index: int, current: dict | None = None, keep_params: bool = True,
             "width": arr.shape[1],
             "height": arr.shape[0],
             "base": base,
-            "span": span,
+            "span": p.span,
             "channel_health": core.detect_channel_health(STATE["preview"]),
         })
         STATE["info"]["strip"]["index"] = index
     return {"index": index, "base": base, "span": p.span, "params": p.__dict__,
             "width": arr.shape[1], "height": arr.shape[0],
             "channel_health": STATE["info"]["channel_health"]}
+
+
+def initial_frame_color(arr,p):
+    if STATE.get('auto_color'):
+        from tone_balance import fit_import
+        return fit_import(arr,p,STATE['native_loaded'].is_raw)
+    return p
 
 
 def do_sample(x: float, y: float, kind: str, current: dict | None = None) -> dict:
@@ -549,17 +624,9 @@ def do_export(params: dict) -> dict:
     suffix = f"-f{frame_no:02d}" if is_strip else ""
     dst = os.path.join(EXPORT_DIR, f"{stem}{suffix}-positive-{uuid.uuid4().hex[:8]}.tif")
     export_pixels(dst,lin,p)
-    write_recipe(dst + ".json", p, src, frame_no)
     with LOCK:
         STATE["params"] = p
-    return {"path": dst, "recipe": dst + ".json"}
-
-
-def write_recipe(path: str, p: Params, source: str, frame: int) -> None:
-    # Keep strip/batch recipes on the same version and source-geometry contract.
-    from desktop_model import recipe
-    with open(path, 'w', encoding='utf-8') as stream:
-        json.dump(recipe(p.__dict__,source,frame),stream,ensure_ascii=False,indent=2,allow_nan=False)
+    return {"path": dst}
 
 
 def do_apply_all(data: dict) -> dict:
@@ -569,18 +636,30 @@ def do_apply_all(data: dict) -> dict:
             raise ValueError('请先打开整条胶片')
         locals_by_frame={i:copy.deepcopy(v.get('local_edits',[])) for i,v in STATE['frame_params'].items()}
         locals_by_frame[STATE['frame_index']]=copy.deepcopy(p.local_edits)
+        frozen = {}
+        layout = STATE['strip_layout']
+        if layout.kind == 'manual' and p.flat_mode == 'strip':
+            existing = {**STATE['frame_params'], STATE['frame_index']:copy.deepcopy(p.__dict__)}
+            frozen = {i:v for i,v in existing.items() if v['flat_mode']=='strip' and v['flat_field'] is not None}
+            p.flat_mode,p.flat_strength,p.flat_field = 'off',0.,None
         STATE['roll_params'] = copy.deepcopy(p.__dict__);STATE['roll_params']['local_edits']=[]
         STATE['frame_params'].clear()
         for i,edits in locals_by_frame.items():
-            if not edits:continue
+            previous = frozen.get(i)
+            if not edits and previous is None:continue
             si,_,arr=strip.extract_one(STATE['strip_img'],STATE['strip_layout'],i)
             fp=copy.deepcopy(p);fp.local_edits=edits;fp.base,fp.anchor=list(STATE['strip_layout'].bases[si]),None
-            if data.get('auto_meter',True):_,fp.span=core.auto_anchor(arr,fp.base,fp.meter_mode)
+            if previous is not None:
+                fp.flat_mode,fp.flat_strength,fp.flat_field = 'strip',previous['flat_strength'],previous['flat_field']
+                fp.base = previous['base'] or fp.base
+            if data.get('auto_meter',True) and 'density' not in fp.tone_balance:
+                _,fp.span=core.auto_anchor(arr,fp.base,fp.meter_mode)
             fp=prepare_params(fp,STATE['strip_img'],STATE['strip_layout'],i)
-            if fp.flat_mode=='strip':fp.base=strip_field(STATE['strip_img'],STATE['strip_layout'],i)[1]
-            if data.get('auto_meter',True) and (fp.flat_mode!='off' or fp.vignette>0):_,fp.span=core.auto_anchor(corrected_input(arr,fp),fp.base,fp.meter_mode)
+            if fp.flat_mode=='strip' and previous is None:fp.base=strip_field(STATE['strip_img'],STATE['strip_layout'],i)[1]
+            if data.get('auto_meter',True) and 'density' not in fp.tone_balance and (fp.flat_mode!='off' or fp.vignette>0):
+                _,fp.span=core.auto_anchor(corrected_input(arr,fp),fp.base,fp.meter_mode)
             STATE['frame_params'][i]=copy.deepcopy(fp.__dict__)
-        STATE['params'] = p
+        STATE['params'] = params_from(STATE['frame_params'][STATE['frame_index']]) if STATE['frame_index'] in frozen else p
         STATE['auto_meter'] = bool(data.get('auto_meter', True))
         THUMB_CACHE.clear()
         count = STATE['strip_layout'].frame_count
@@ -601,15 +680,15 @@ def do_batch(data: dict) -> dict:
         roll = copy.deepcopy(STATE['roll_params'])
         auto_meter = bool(data.get('auto_meter', True))
         export_space = p.output_space
-        stem = os.path.splitext(os.path.basename(src))[0]
-        directory = os.path.join(EXPORT_DIR, f'{stem}-roll-{uuid.uuid4().hex[:8]}')
+        from export_policy import clean
+        stem = clean(os.path.splitext(os.path.basename(src))[0])
+        directory = EXPORT_DIR
         BATCH.update(running=True, done=0, total=layout.frame_count,
                      directory=directory, error='')
 
     def work():
         try:
-            os.makedirs(directory, exist_ok=False)
-            manifest = []
+            from desktop_model import export_image
             for index in range(layout.frame_count):
                 si, _, arr = strip.extract_one(img, layout, index)
                 if index in saved:
@@ -626,14 +705,9 @@ def do_batch(data: dict) -> dict:
                     if auto_meter:
                         _,fp.span = core.auto_anchor(corrected_input(arr,fp),fp.base,fp.meter_mode)
                 fp.output_space = export_space
-                export_pixels(dst,arr,fp)
-                write_recipe(dst + '.json', fp, src, index+1)
-                manifest.append({'frame': index+1, 'file': os.path.basename(dst),
-                                 'params': fp.__dict__})
+                export_image(dst,fp.__dict__,arr,unique=True)
                 with LOCK:
                     BATCH['done'] = index+1
-            with open(os.path.join(directory, 'manifest.json'), 'w', encoding='utf-8') as f:
-                json.dump(manifest, f, ensure_ascii=False, indent=2, allow_nan=False)
         except Exception as e:
             traceback.print_exc()
             with LOCK:

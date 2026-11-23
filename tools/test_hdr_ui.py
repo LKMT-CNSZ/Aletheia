@@ -54,7 +54,10 @@ with tempfile.TemporaryDirectory(dir=folder) as tmp:
     # The actual toolbar and the HDR menu share the save dialog. Format selection
     # must control the encoder, even when the canvas uses the opposite display.
     before=copy.deepcopy(w.p)
-    hf='HDR TIFF - Float32 (*.tif *.tiff)';sf='SDR TIFF - 16bit (*.tif *.tiff)'
+    from tiff_formats import export_formats
+    formats=export_formats()
+    hf=next(label for label,pair in formats.items() if pair==(True,'deflate'))
+    sf=next(label for label,pair in formats.items() if pair==(False,'deflate'))
     with patch.object(ui.QFileDialog,'getSaveFileName',return_value=(str(root/'toolbar-hdr'),hf)) as save:
         w.export_button.click();idle()
         assert hf in save.call_args.args[3] and save.call_args.args[4]==sf
@@ -65,7 +68,8 @@ with tempfile.TemporaryDirectory(dir=folder) as tmp:
     try:
         with patch.object(ui.QFileDialog,'getSaveFileName',return_value=(str(root/'selected-sdr.tiff'),sf)) as save:
             w.export_dialog();idle()
-            assert save.call_args.args[4]=='Windows HDR - JPEG XR (*.jxr)' and '-hdr.jxr' in save.call_args.args[2]
+            assert save.call_args.args[4]==hf and '-hdr.tif' in save.call_args.args[2]
+            assert '.jxr' not in save.call_args.args[3] and 'JPEG' not in save.call_args.args[3]
     finally:w.hdr_canvas.active=False
     assert read_tiff_linear(root/'selected-sdr.tiff').max()<=1
     with patch.object(ui.QFileDialog,'getSaveFileName',return_value=('',hf)),patch.object(w,'command') as command:
@@ -73,15 +77,12 @@ with tempfile.TemporaryDirectory(dir=folder) as tmp:
     with patch.object(ui.QFileDialog,'getSaveFileName',return_value=(str(root/'menu-hdr.tif'),hf)) as save:
         w.hdr_export_dialog();idle();assert save.call_args.args[4]==hf
     assert read_tiff_linear(root/'menu-hdr.tif').max()>1 and w.p==before
-    with patch.object(ui.QFileDialog,'getSaveFileName',return_value=(str(root/'windows-view.tif'),'Windows HDR - JPEG XR (*.jxr)')):
+    uncompressed=next(label for label,pair in formats.items() if pair==(True,'none'))
+    with patch.object(ui.QFileDialog,'getSaveFileName',return_value=(str(root/'hdr-uncompressed.jpg'),uncompressed)):
         w.export_button.click();idle()
-    import hdr_jxr
-    import hdr_color,working_color
-    p=ui.model.engine.prepare_params(ui.model.params(w.p))
-    expected=working_color.linear(hdr_color.render(ui.model.engine.STATE['full'],p),p.working_space,'srgb')*(203/80)
-    actual=hdr_jxr.read_scrgb(root/'windows-view.jxr')
-    assert actual.shape==expected.shape and np.max(np.abs(actual-expected))<.003
-    assert w.last_export==str(root/'windows-view.jxr') and w.p==before
+    assert hdr_io.tags(root/'hdr-uncompressed.tif')[259]==1
+    assert np.array_equal(read_tiff_linear(root/'hdr-uncompressed.tif'),read_tiff_linear(root/'toolbar-hdr.tif'))
+    assert w.last_export==str(root/'hdr-uncompressed.tif') and w.p==before
     # Native HDR is explicitly unavailable in offscreen, never silently emulated in SDR.
     w.open_hdr_preview();idle();app.processEvents()
     assert w.hdr_preview_dialog.canvas.failed

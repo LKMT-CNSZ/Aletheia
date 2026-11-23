@@ -96,7 +96,7 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build'/'tests',prefix='geometry-') as
     exported=read_tiff(str(dest));expected=core.process(original,model.engine.prepare_params(model.params(edited)))
     assert exported.shape[:2]==geometry.output_shape(original.shape,edited)
     assert np.array_equal(exported,(np.clip(expected,0,1)*65535+.5).astype(np.uint16))
-    assert json.loads(Path(str(dest)+'.json').read_text('utf-8'))['params']['crop']==edited['crop']
+    assert model.recipe(window.p)['params']['crop']==edited['crop']
     project=folder/'geometry.filmproj';window.save_project_to(str(project));idle()
     window.reset_geometry();idle();window.open_project_path(str(project));idle()
     assert all(window.p[k]==edited[k] for k in ('rotation','straighten','crop'))
@@ -110,7 +110,7 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build'/'tests',prefix='geometry-') as
     second=model.clone(window.p);window.save_project_to(str(project));idle()
     window.open_project_path(str(project));idle()
     result=model.export_roll(folder,window.p,False,threading.Event(),lambda *args:None)
-    rows=json.loads((Path(result['folder'])/'manifest.json').read_text('utf-8'))
+    rows=result['frames']
     for i,p in enumerate((first,second)):
         assert all(rows[i]['params'][key]==p[key] for key in ('rotation','straighten','crop'))
         _,_,raw=__import__('strip').extract_one(model.engine.STATE['strip_img'],model.engine.STATE['strip_layout'],i)

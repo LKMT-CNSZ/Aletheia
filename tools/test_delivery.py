@@ -54,7 +54,9 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build/tests',prefix='delivery-') as t
  rejected(lambda:model.export_roll(folder,p,False,cancel,lambda *a:None,policy.options('{source}')))
  assert set(folder.iterdir())==before
  cancel.clear();roll=model.export_roll(folder,p,False,cancel,lambda *a:None,config)
- assert len(list(Path(roll['folder']).glob('*.tif')))==21
+ assert Path(roll['folder'])==folder
+ new=set(folder.iterdir())-before
+ assert len(new)==21 and all(path.is_file() and path.suffix=='.tif' for path in new)
  assert (Path(roll['folder'])/index['frames'][0]['filename']).is_file()
  print('PASS edited PNG contact pixels/ICC, 21-frame two-page order, contact cancellation cleanup, custom roll names and collision preflight')
  store=StudioStore(folder/'profile');asset=store.capture(snapshot);store.metadata(asset,4,'pick','队列卷')

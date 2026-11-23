@@ -4,7 +4,7 @@ import argparse,sys,time,traceback,ctypes,os
 from PySide6.QtCore import Qt,QObject,QThread,Signal,QTimer,QRectF
 from PySide6.QtGui import QPainter,QImage,QPixmap,QColor,QFont,QLinearGradient,QIcon
 from PySide6.QtWidgets import QApplication,QWidget
-from app_paths import select_profile
+from app_paths import APP_NAME, select_profile
 
 DURATION=1.2
 
@@ -28,7 +28,7 @@ class StartupSplash(QWidget):
     skipped=Signal()
     def __init__(self,logo,english=False):
         super().__init__(None,Qt.WindowType.SplashScreen|Qt.WindowType.FramelessWindowHint)
-        self.setWindowTitle('FilmInvert Native');self.setWindowIcon(QIcon(str(Path(__file__).resolve().parent/'assets/filminvert-native-856209a72631.ico')))
+        self.setWindowTitle(APP_NAME);self.setWindowIcon(QIcon(str(Path(__file__).resolve().parent/'assets/filminvert-native-856209a72631.ico')))
         self.logo=QPixmap(str(logo));self.progress=0.;self.english=english
         screen=QApplication.primaryScreen();area=screen.availableGeometry() if screen else None
         self.resize(min(620,area.width()-32) if area else 620,min(370,area.height()-32) if area else 370)
@@ -39,12 +39,9 @@ class StartupSplash(QWidget):
         w=self.width();h=self.height();side=min(190,h*.52);top=(h-270)/2
         p.drawPixmap(QRectF((w-side)/2,top,side,side),self.logo,QRectF(self.logo.rect()))
         font=QFont('Segoe UI');font.setPixelSize(30);font.setWeight(QFont.Weight.Medium);p.setFont(font)
-        brand='FilmInvert';bw=p.fontMetrics().horizontalAdvance(brand)
-        small=QFont('Segoe UI');small.setPixelSize(14);p.setFont(small);nw=p.fontMetrics().horizontalAdvance('Native')
-        left=(w-bw-nw-12)/2;baseline=top+side+30
-        p.setFont(font);p.setPen(QColor('#f5f5f5'));p.drawText(round(left),round(baseline),brand)
-        p.setFont(small);p.setPen(QColor('#b9b9b9'));p.drawText(round(left+bw+12),round(baseline),'Native')
-        small.setFamily('Microsoft YaHei');small.setPixelSize(12);p.setFont(small);p.setPen(QColor('#aaaaaa'))
+        left=(w-p.fontMetrics().horizontalAdvance(APP_NAME))/2;baseline=top+side+30
+        p.setPen(QColor('#f5f5f5'));p.drawText(round(left),round(baseline),APP_NAME)
+        small=QFont('Microsoft YaHei');small.setPixelSize(12);p.setFont(small);p.setPen(QColor('#aaaaaa'))
         p.drawText(QRectF(0,baseline+10,w,24),Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignTop,'Bring negatives to life' if english else '让负片重现色彩');p.end()
         self.negative=self.positive.copy();self.negative.invertPixels()
         p=QPainter(self.negative);p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Multiply);p.fillRect(self.rect(),QColor('#8d4b23'));p.end()
@@ -110,7 +107,7 @@ class StartupController(QObject):
 def run(argv,bundle,window_factory=None):
     parser=argparse.ArgumentParser();parser.add_argument('image',nargs='?');parser.add_argument('--profile');args=parser.parse_args(argv)
     QApplication.setAttribute(Qt.ApplicationAttribute.AA_DontUseNativeDialogs,True)
-    app=QApplication(sys.argv[:1]);app.setApplicationName('FilmInvert Native');app.setOrganizationName('FilmInvert')
+    app=QApplication(sys.argv[:1]);app.setApplicationName(APP_NAME);app.setOrganizationName('FilmInvert')
     controller=StartupController(app,bundle,args,window_factory);app.startup_controller=controller;controller.start()
     result=app.exec()
     if controller.worker:controller.worker.wait()

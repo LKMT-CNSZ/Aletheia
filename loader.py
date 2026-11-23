@@ -98,7 +98,20 @@ def _load_raw(path: str,working_space='srgb') -> np.ndarray:
         )
     try:
         from file_io import io_path
-        with rawpy.imread(str(io_path(path))) as raw:
+        physical = io_path(path)
+        output_color = rawpy.ColorSpace.ProPhoto if working_space == 'prophoto' else rawpy.ColorSpace.sRGB
+        return _decode_linear16(_postprocess_raw(physical, output_color))
+    except Exception as exc:
+        # libraw 的异常 message 是 bytes，直接抛出去前端会看到 b'...'
+        msg = exc.args[0] if exc.args else str(exc)
+        if isinstance(msg, bytes):
+            msg = msg.decode("utf-8", "ignore")
+        raise RuntimeError(f"RAW 解码失败（{type(exc).__name__}）：{msg}") from None
+
+
+def _postprocess_raw(path, output_color):
+    try:
+        with rawpy.imread(str(path)) as raw:
             # 白平衡策略：优先用 libraw 给的 daylight 固定值。
             # 整卷必须用同一组增益，否则片基颜色一帧一变，去色罩就没法做了。
             # 绝不能用 [1,1,1,1]——未白平衡的原始通道比例会让红通道接近 0，
@@ -109,21 +122,21 @@ def _load_raw(path: str,working_space='srgb') -> np.ndarray:
             else:
                 wb_kwargs = dict(use_camera_wb=True)
 
-            rgb = raw.postprocess(
+            return raw.postprocess(
                 gamma=(1, 1),              # 不施加 gamma，保留线性
                 no_auto_bright=True,       # 关键：别自动提亮，会毁掉密度关系
                 output_bps=16,
-                output_color=rawpy.ColorSpace.ProPhoto if working_space=='prophoto' else rawpy.ColorSpace.sRGB,
+                output_color=output_color,
                 demosaic_algorithm=rawpy.DemosaicAlgorithm.AHD,
                 **wb_kwargs,
             )
-    except Exception as exc:
-        # libraw 的异常 message 是 bytes，直接抛出去前端会看到 b'...'
-        msg = exc.args[0] if exc.args else str(exc)
-        if isinstance(msg, bytes):
-            msg = msg.decode("utf-8", "ignore")
-        raise RuntimeError(f"RAW 解码失败（{type(exc).__name__}）：{msg}") from None
-    return _decode_linear16(rgb)
+    except rawpy.LibRawFileUnsupportedError:
+        if os.name == 'nt' and path.suffix.lower() == '.nef':
+            from nikon_he import decode
+            rgb = decode(path, output_color.value)
+            if rgb is not None:
+                return rgb
+        raise
 
 
 def load(path: str, input_color='legacy',working_space='srgb') -> Loaded:

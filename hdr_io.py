@@ -1,6 +1,6 @@
-"""Interoperable uncompressed RGB float32 TIFF with explicit linear-space metadata."""
+"""RGB float32 TIFF with linear metadata and optional lossless Deflate strips."""
 from pathlib import Path
-import json,struct
+import json,struct,zlib
 import numpy as np
 from file_io import io_path,temporary_path
 
@@ -45,7 +45,8 @@ def metadata(path):
     return meta
 
 
-def write(path,array,space='srgb',kind='positive',extra=None,cancel=None):
+def write(path,array,space='srgb',kind='positive',extra=None,cancel=None,compression='none',progress=None):
+    if compression not in ('none','deflate'):raise ValueError('Unknown HDR TIFF compression')
     a=np.asarray(array)
     if a.ndim!=3 or a.shape[2]!=3 or not np.isfinite(a).all() or np.min(a)<0:raise ValueError('HDR TIFF needs finite nonnegative linear RGB')
     if space not in ('srgb','prophoto') or kind not in ('positive','negative'):raise ValueError('Invalid HDR color space or image kind')
@@ -57,6 +58,9 @@ def write(path,array,space='srgb',kind='positive',extra=None,cancel=None):
     profile=QColorSpace(QColorSpace.NamedColorSpace.SRgbLinear if space=='srgb' else QColorSpace.NamedColorSpace.ProPhotoRgb)
     profile.setTransferFunction(QColorSpace.TransferFunction.Linear)
     icc=bytes(profile.iccProfile())
+    if compression=='deflate':
+        _write_deflate(path,a,description,icc,cancel,progress)
+        return meta
     entries=[(256,4,1,w),(257,4,1,h),(258,3,3,struct.pack('<HHH',32,32,32)),
         (259,3,1,1),(262,3,1,2),(270,2,len(description),description),(273,4,1,0),
         (277,3,1,3),(278,4,1,h),(279,4,1,w*h*12),(284,3,1,1),(339,3,3,struct.pack('<HHH',3,3,3)),(34675,7,len(icc),icc)]
@@ -80,9 +84,52 @@ def write(path,array,space='srgb',kind='positive',extra=None,cancel=None):
             for y in range(0,h,128):
                 if cancel is not None and cancel.is_set():raise InterruptedError('HDR export canceled')
                 f.write(np.asarray(a[y:y+128],dtype='<f4').tobytes())
+                if progress is not None:progress(min(h,y+128),h)
             f.flush()
+        if cancel is not None and cancel.is_set():raise InterruptedError('HDR export canceled')
         import os
         if os.name=='nt':os.rename(temp,dest)  # Windows rename atomically refuses an existing target.
         else:os.link(temp,dest)
     finally:temp.unlink(missing_ok=True)
     return meta
+
+
+def _write_deflate(path,array,description,icc,cancel,progress):
+    """TIFF Compression=8, Predictor=1: compress original float32 bytes exactly."""
+    h,w=array.shape[:2]
+    rows=max(1,min(128,(2*1024*1024)//max(1,w*12)),(h+16383)//16384)
+    dest=io_path(path);dest.parent.mkdir(parents=True,exist_ok=True)
+    if dest.exists():raise FileExistsError('Output already exists: '+str(path))
+    temp=temporary_path(dest)
+    try:
+        with temp.open('xb') as f:
+            f.write(b'II'+struct.pack('<HI',42,0));offsets=[];counts=[]
+            for top in range(0,h,rows):
+                if cancel is not None and cancel.is_set():raise InterruptedError('HDR export canceled')
+                raw=np.asarray(array[top:top+rows],dtype='<f4').tobytes()
+                blob=zlib.compress(raw,6);offsets.append(f.tell());counts.append(len(blob));f.write(blob)
+                if progress is not None:progress(min(h,top+rows),h)
+            if cancel is not None and cancel.is_set():raise InterruptedError('HDR export canceled')
+            if f.tell()%2:f.write(b'\0')
+            ifd=f.tell()
+            def longs(values):return values[0] if len(values)==1 else struct.pack('<'+'I'*len(values),*values)
+            entries=[(256,4,1,w),(257,4,1,h),(258,3,3,struct.pack('<HHH',32,32,32)),
+                (259,3,1,8),(262,3,1,2),(270,2,len(description),description),(273,4,len(offsets),longs(offsets)),
+                (277,3,1,3),(278,4,1,rows),(279,4,len(counts),longs(counts)),(284,3,1,1),
+                (339,3,3,struct.pack('<HHH',3,3,3)),(34675,7,len(icc),icc)]
+            cursor=ifd+2+12*len(entries)+4;fields=[];tail=[]
+            for tag,typ,count,value in entries:
+                if isinstance(value,int):field=struct.pack('<H',value)+b'\0\0' if typ==3 else struct.pack('<I',value)
+                elif len(value)<=4:field=value.ljust(4,b'\0')
+                else:
+                    field=struct.pack('<I',cursor);block=value+b'\0'*(len(value)%2);tail.append(block);cursor+=len(block)
+                fields.append(struct.pack('<HHI',tag,typ,count)+field)
+            if cursor>=0xffffffff:raise ValueError('HDR TIFF exceeds the classic TIFF limit')
+            f.write(struct.pack('<H',len(entries)));f.write(b''.join(fields));f.write(b'\0'*4)
+            for block in tail:f.write(block)
+            f.seek(4);f.write(struct.pack('<I',ifd));f.flush()
+        if cancel is not None and cancel.is_set():raise InterruptedError('HDR export canceled')
+        import os
+        if os.name=='nt':os.rename(temp,dest)
+        else:os.link(temp,dest)
+    finally:temp.unlink(missing_ok=True)

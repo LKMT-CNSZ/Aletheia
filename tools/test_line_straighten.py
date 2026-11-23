@@ -128,7 +128,7 @@ with tempfile.TemporaryDirectory(dir=root/'build/tests',prefix='multiline-') as 
     assert reopened['params']['straighten']==final['straighten']
     store=StudioStore(folder/'profile');asset=store.capture(model.project_snapshot(p))
     job=store.enqueue([asset],folder/'output')[0];assert studio_worker.execute(store,job)=='completed'
-    actual=read_tiff(Path(store.get_job(job)['destination'])/'frame-0001.tif')
+    actual=read_tiff(Path(store.get_job(job)['destination'])/store.get_job(job)['outputs']['0']['tiff']['name'])
     expected=(np.clip(model.core.process(model.engine.STATE['full'],model.params(p)),0,1)*65535+.5).astype(np.uint16)
     assert np.array_equal(actual,expected)
 # Dispose standalone test windows/timers while QApplication still exists. Relying

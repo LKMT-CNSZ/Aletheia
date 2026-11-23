@@ -8,10 +8,22 @@ from PySide6.QtCore import QObject,Signal,QTimer,QProcess,QUrl,Qt,QProcessEnviro
 from PySide6.QtGui import QDesktopServices,QIcon,QPixmap
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QLineEdit,QComboBox,
     QCheckBox,QTableWidget,QTableWidgetItem,QAbstractItemView,QFileDialog,QTabWidget,QWidget,
-    QListWidget,QListWidgetItem,QStackedWidget,QListView,QMessageBox)
+    QListWidget,QListWidgetItem,QStackedWidget,QListView,QMessageBox,QProgressBar)
 
 STATUS={'queued':_t('待处理'),'running':_t('导出中'),'paused':_t('已暂停'),'failed':_t('失败'),'completed':_t('完成')}
 FLAG={'none':_t('未标记'),'pick':_t('精选'),'reject':_t('弃选')}
+
+
+def set_export_progress(bar,jobs,scope):
+    selected=[job for job in jobs if job['id'] in scope]
+    total=sum(job['total_count'] for job in selected)
+    done=sum(job['done_count'] for job in selected)
+    bar.setVisible(total>0)
+    if total:
+        bar.setRange(0,total)
+        bar.setValue(done)
+        _ui(bar.setFormat,_t('%v / %m 帧'))
+
 
 class ThumbnailWorker(QThread):
     ready=Signal(int,str,str,str)
@@ -29,25 +41,31 @@ class QueueController(QObject):
     changed=Signal();message=Signal(object);stopped=Signal()
     def __init__(self,store,root,parent=None):
         super().__init__(parent);self.store=store;self.root=Path(root);self.process=None
-        self.identifier=None;self.pid=None;self.automatic=False;self.errors=''
+        self.identifier=None;self.pid=None;self.automatic=False;self.errors='';self.scope=set()
         self.store.recover()
     def running(self):return self.process is not None
     def start(self):
         if self.running():return
         if not self.store.recover():self.message.emit(_t('另一个窗口正在使用导出队列'));return
+        self.scope={job['id'] for job in self.store.job_summaries() if job['status']=='queued'}
         self.automatic=True;self.next()
     def next(self):
         identifier=self.store.next_job() if self.automatic else None
-        if identifier is None:self.stopped.emit();self.changed.emit();return
+        if identifier is None:self.automatic=False;self.stopped.emit();self.changed.emit();return
+        self.scope.add(identifier)
         self.identifier=identifier;self.errors='';process=QProcess(self);self.process=process
         executable=Path(sys.executable).with_name('python.exe') if os.name=='nt' else Path(sys.executable)
         process.setProgram(str(executable));process.setArguments(['-I','-X','utf8',str(self.root/'studio_worker.py'),'--profile',str(self.store.folder.parent),'--job',identifier])
         environment=QProcessEnvironment.systemEnvironment();environment.insert('PYTHONIOENCODING','utf-8');process.setProcessEnvironment(environment)
         process.setWorkingDirectory(str(self.root));process.started.connect(lambda:setattr(self,'pid',int(process.processId())))
         process.readyReadStandardError.connect(self.read_error)
-        process.readyReadStandardOutput.connect(lambda:process.readAllStandardOutput())
+        process.readyReadStandardOutput.connect(self.read_progress)
         process.finished.connect(self.finished);process.errorOccurred.connect(self.process_error)
         process.start();self.changed.emit()
+    def read_progress(self):
+        if self.process:
+            self.process.readAllStandardOutput()
+            self.changed.emit()
     def read_error(self):
         if self.process:self.errors=(self.errors+bytes(self.process.readAllStandardError()).decode('utf-8','replace'))[-8000:]
     def process_error(self,error):
@@ -121,6 +139,8 @@ class StudioDialog(QDialog):
         queue=QWidget();layout=QVBoxLayout(queue);_ui(tabs.addTab, queue,_t('导出队列'))
         self.queue=QTableWidget(0,6);_ui(self.queue.setHorizontalHeaderLabels, [_t('照片 / 任务'),_t('状态'),_t('完成帧'),_t('加入时间'),_t('输出目录'),_t('错误信息')])
         self.configure_table(self.queue);self.queue.setColumnWidth(0,190);self.queue.setColumnWidth(4,300);self.queue.setColumnWidth(5,310);layout.addWidget(self.queue,1)
+        self.export_progress=QProgressBar();self.export_progress.hide()
+        _ui(self.export_progress.setAccessibleName,_t('导出进度'));layout.addWidget(self.export_progress)
         row=QHBoxLayout()
         for title,fn in [(_t('开始待处理任务'),controller.start),(_t('暂停队列'),controller.pause),(_t('继续 / 重试选中'),self.retry),(_t('打开输出目录'),self.open_output)]:
             button=_ui(QPushButton, title);button.clicked.connect(fn);row.addWidget(button)
@@ -275,6 +295,7 @@ class StudioDialog(QDialog):
         import time
         selected=set(self.selected(self.queue));self.queue.setRowCount(0)
         jobs=self.store.job_summaries();self.queue.setRowCount(len(jobs))
+        set_export_progress(self.export_progress,jobs,self.controller.scope)
         for i,row in enumerate(jobs):
             values=[row['name']+' · '+row['id'][:8],STATUS[row['status']],_tf('{0} / {1}', row["done_count"], row["total_count"]),time.strftime('%m-%d %H:%M',time.localtime(row['created'])),row['destination'],row['error']]
             for c,value in enumerate(values):self.queue.setItem(i,c,_ui(QTableWidgetItem, value))

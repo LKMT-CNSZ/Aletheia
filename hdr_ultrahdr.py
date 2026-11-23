@@ -6,6 +6,7 @@ SDR base is sRGB, including the saved SDR rendition controls. JPEG is lossy.
 """
 import os
 import numpy as np
+from app_paths import APP_NAME
 from file_io import io_path,temporary_path
 
 def codec():
@@ -15,7 +16,7 @@ def codec():
             raise RuntimeError('Expected libultrahdr 2.0.2')
         return api
     except ImportError as error:
-        raise RuntimeError('Ultra HDR JPEG codec missing; use the complete FilmInvert distribution') from error
+        raise RuntimeError(f'Ultra HDR JPEG codec missing; use the complete {APP_NAME} distribution') from error
 
 def canceled(cancel):
     if cancel is not None and cancel.is_set():raise InterruptedError('Ultra HDR JPEG export canceled')

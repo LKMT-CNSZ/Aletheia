@@ -23,3 +23,12 @@ def io_path(path):
 def temporary_path(destination):
     # Do not grow the destination basename; share its filesystem for atomic rename.
     return io_path(destination).with_name('.fi-'+uuid.uuid4().hex+'.part')
+
+
+def publish_new(stage,destination):
+    """Publish on the same volume without replacing an existing file."""
+    if os.name=='nt':
+        os.rename(stage,destination)
+    else:
+        os.link(stage,destination)
+        stage.unlink()

@@ -72,7 +72,7 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build'/'tests',prefix='wide-') as tmp
     window.open_project_path(str(project));idle();assert window.p['working_space']=='prophoto'
     destination=folder/'wide-output.tif';window.export_to(str(destination));idle()
     assert np.max(np.abs(read_tiff(str(destination)).astype(int)-read_tiff(str(source)).astype(int)))<=1
-    recipe=json.loads(Path(str(destination)+'.json').read_text('utf-8'));assert recipe['working_space']=='prophoto'
+    assert model.recipe(window.p)['working_space']=='prophoto'
     spec={'mode':'strip','manual':{'rotation':0,'frames':[{'id':'a','box':[0,0,80,40]},{'id':'b','box':[80,0,160,40]}]}}
     result=model.reframe(spec,window.p);window.on_opened(result);idle()
     assert model.engine.STATE['native_input']['working_space']=='prophoto'

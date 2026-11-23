@@ -242,3 +242,4 @@ __pycache__/
 .env.*
 *.filmbackup
 *.filmtransfer
+/raw_support/*.dll

@@ -1,23 +1,23 @@
 """Versioned batch state in the existing durable library, separate from queue snapshots."""
 from pathlib import Path
-import copy,hashlib,json,time,uuid
+import copy,json,time,uuid
 from studio_store import encoded,engine_signature,queue_lock,QueueBusy
 from file_io import io_path
 
 FIELDS={'style':('mode','film','slope','d_min','saturation','crosstalk'),
         'wb':('temp','tint','wb_gain'),'exposure':('exposure',),
-        'tone':('black','white','curve','hsl','tone_shadows','tone_highlights','tone_whites','tone_blacks','tone_rolloff','local_tone','local_radius','local_detail','hdr_enabled','hdr_strength','hdr_start','hdr_softness','hdr_limit','sdr_hdr_rolloff','sdr_hdr_exposure'),'output':('output_space',),
+        'tone':('black','white','curve','hsl','tone_shadows','tone_highlights','tone_whites','tone_blacks','tone_rolloff','local_tone','local_radius','local_detail','hdr_enabled','hdr_strength','hdr_start','hdr_softness','hdr_limit','sdr_hdr_rolloff','sdr_hdr_exposure','hdr_chroma','hdr_sky_protect','hdr_punch','hdr_brilliance','hdr_target','hdr_curve','sdr_hdr_contrast','sdr_hdr_highlights','sdr_hdr_saturation','sdr_hdr_color_safe'),'output':('output_space',),
         'calibration':('calibration','calibration_strength')}
-DEFAULT={'input_mode':'single','input_color':'legacy','working_space':'srgb','method':'auto',
+DEFAULT={'input_mode':'single','input_color':'legacy','working_space':'auto','method':'auto',
          'fields':['style','output'],'sync_mode':'absolute','exposure_delta':0.,
          'group_rule':'manual','stop_after':'style','require_review':True,'whole_roll':True,
-         'template':'{source}-f{frame:04d}-positive','group_directories':True,'output':''}
+         'template':'{source}-f{frame:04d}-positive','output':'','jpeg':False}
 def clone(value):return copy.deepcopy(value)
 def settings(value):
     from export_policy import validate
     from input_color import CHOICES
     result={**DEFAULT,**value}
-    choices={'input_mode':('single','strip','auto'),'working_space':('srgb','prophoto'),
+    choices={'input_mode':('single','strip','auto'),'working_space':('auto','srgb','prophoto'),
              'method':('auto','sync','existing'),'sync_mode':('absolute','relative'),
              'group_rule':('manual','folder','tag','space','prefix'),'stop_after':('check','prepare','style')}
     for key,options in choices.items():
@@ -26,11 +26,15 @@ def settings(value):
     if not isinstance(result['fields'],list) or any(x not in FIELDS for x in result['fields']):raise ValueError('同步字段无效')
     result['exposure_delta']=float(result['exposure_delta'])
     if not -4<=result['exposure_delta']<=4:raise ValueError('相对曝光应在 ±4 EV 内')
-    for key in ('require_review','whole_roll','group_directories'):result[key]=bool(result[key])
+    for key in ('require_review','whole_roll','jpeg'):result[key]=bool(result[key])
     validate(result['template']);return {k:result[k] for k in DEFAULT}
 def snapshot_key(snapshot):
     if snapshot is None:return None
+    from desktop_model import signature_params
     value={k:snapshot.get(k) for k in ('input','layout','frame_count','current_frame','frames','roll_params','options')}
+    value['frames']={key:signature_params(params) for key,params in value['frames'].items()}
+    value['roll_params']=signature_params(value['roll_params'])
+    if snapshot.get('auto_color'):value['auto_color']=True
     value['source']={k:snapshot['source'].get(k) for k in ('path','size','sha256')}
     return encoded(value)
 def validate_payload(data):
@@ -176,7 +180,7 @@ class BatchStore:
                     item['reviewed']=True;item['stage']='reviewed'
         self.edit(identifier,apply)
     def start(self,identifier,operation,ids=None,overwrite=False):
-        if operation not in ('check','prepare','style','pipeline','preview','report'):raise ValueError('处理步骤无效')
+        if operation not in ('check','prepare','style','pipeline','preview','report','negative_color'):raise ValueError('处理步骤无效')
         token=uuid.uuid4().hex
         def apply(data):data.update(status='running',run={'id':token,'session':self.session,'operation':operation,'ids':ids,'overwrite':bool(overwrite),'cancel':False,'pid':None,'config':clone(data['config'])})
         self.edit(identifier,apply);return token
@@ -227,7 +231,7 @@ class BatchStore:
             data['report']=None;data.pop('report_error',None)
         self.edit(identifier,apply)
     def enqueue(self,identifier):
-        from export_policy import names,options,clean
+        from export_policy import DEFAULT,names,options
         data=self.get(identifier);config=data['config'];output=Path(config['output']).resolve() if config['output'] else None
         if data['status']=='running':raise ValueError('请等待批次步骤完成')
         revision=data['updated']
@@ -235,7 +239,7 @@ class BatchStore:
         targets=[i for i in data['items'] if i['selected'] and not i['skip'] and self.studio.get_asset(i['asset'])['flag']!='reject']
         problems=[i['name'] for i in targets if not i.get('job') and (not i['snapshot'] or not i['valid'] or i.get('verified_session')!=self.session or i['error'] or (config['require_review'] and not i['reviewed']))]
         if problems:raise ValueError('以下照片未准备、校验或复核：'+', '.join(problems[:20]))
-        made=[];folder=output/('batch-'+clean(data['name'])+'-'+data['id'][:8])
+        made=[]
         with self.studio.connection() as db:
             db.execute('BEGIN IMMEDIATE');data=self._read(db,identifier)
             if data['updated']!=revision:raise ValueError('批次状态已改变，请再次检查后加入队列')
@@ -244,14 +248,14 @@ class BatchStore:
                 if item.get('job') and db.execute('SELECT id FROM jobs WHERE id=?',(item['job'],)).fetchone():continue
                 snapshot=clone(item['snapshot']);source=snapshot['source'];stat=io_path(source['path']).stat()
                 if (stat.st_size,stat.st_mtime_ns)!=(source['size'],source['mtime_ns']):raise ValueError('原片有变化，请重新检查：'+item['name'])
-                snapshot['_export']=options(config['template'],item['group']);snapshot['_queue_engine']=engine_signature()
+                snapshot['_export']=options(config['template'] or DEFAULT,item['group']);snapshot['_queue_engine']=engine_signature()
+                snapshot['_flat_export']=True
+                snapshot['_export_jpeg']=bool(config.get('jpeg'))
                 snapshot['_batch']={'id':identifier,'group':item['group'],'asset':item['asset']}
                 indices=list(range(snapshot['frame_count'])) if config['whole_roll'] else [snapshot['current_frame']]
                 names(source['path'],indices,snapshot['_export']);job=uuid.uuid4().hex
-                group=(clean(item['group'])+'-'+hashlib.sha256(item['group'].encode()).hexdigest()[:6]) if config['group_directories'] else ''
-                destination=folder/group/('film-'+clean(Path(item['name']).stem)+'-'+job)
                 now=time.time();db.execute('INSERT INTO jobs(id,asset_id,name,snapshot,indices,destination,status,total_count,created,updated) VALUES(?,?,?,?,?,?,?,?,?,?)',
-                    (job,item['asset'],item['name'],encoded(snapshot),encoded(indices),str(destination),'queued',len(indices),now,now))
+                    (job,item['asset'],item['name'],encoded(snapshot),encoded(indices),str(output),'queued',len(indices),now,now))
                 item['job']=job;item['stage']='queued';made.append(job)
-            data['export_root']=str(folder);self._save(db,data)
+            data['export_root']=str(output);self._save(db,data)
         return made

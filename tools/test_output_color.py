@@ -45,8 +45,7 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build'/'tests') as tmp:
         wide=core.process(model.engine.STATE['full'],model.params(p),'prophoto')
         expected=colorio.output_diagnostics(wide,target,'prophoto')
         dest=folder/(target+'.tif');model.export_image(dest,p)
-        saved=json.loads(Path(str(dest)+'.json').read_text('utf-8'))['output_diagnostics']
-        assert saved['out_of_gamut_fraction']==expected['fraction']
+        assert not Path(str(dest)+'.json').exists()
         actual=read_tiff(str(dest));wanted=(np.clip(colorio.convert(wide,target,'prophoto'),0,1)*65535+.5).astype(np.uint16)
         assert np.array_equal(actual,wanted)
         preview=model.preview(p);assert preview['diagnostics']['fraction']==expected['fraction']

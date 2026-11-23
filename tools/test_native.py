@@ -65,8 +65,8 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build'/'tests',prefix='native-') as f
     assert read_tiff(str(dest)).dtype==np.uint16
     with Image.open(dest) as im:
         assert 'ProPhoto' in ImageCms.getProfileDescription(ImageCms.ImageCmsProfile(io.BytesIO(im.info['icc_profile'])))
-    saved=json.loads(Path(str(dest)+'.json').read_text('utf-8'))
-    assert saved['params']['flat_mode']=='reference' and saved['params']['hsl'][0][0]==-.2
+    assert not Path(str(dest)+'.json').exists()
+    assert window.p['flat_mode']=='reference' and window.p['hsl'][0][0]==-.2
     window.pixel_view();wait_idle();assert window.canvas.transform().m11()==1
     window.fit_view();wait_idle()
     window.open_path(str(ROOT/'samples'/'pro-strip-demo.tif'));wait_idle()
@@ -74,17 +74,35 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build'/'tests',prefix='native-') as f
     window.edit_parameter('exposure',.25,True);window.go_frame(3);wait_idle()
     assert window.info['strip']['index']==3 and window.p['exposure']==.25
     window.apply_roll();wait_idle()
-    # Cancellation occurs between completed frames and keeps a manifest.
+    # Cancellation keeps completed TIFFs and returns progress to the caller.
     cancel=threading.Event()
     def progress(done,total,path):
         if done==1:cancel.set()
     result=model.export_roll(folder,window.p,True,cancel,progress)
     assert result['cancelled'] and result['completed']==1
-    assert len(list(Path(result['folder']).glob('*.tif')))==1
-    assert json.loads((Path(result['folder'])/'task.json').read_text())['cancelled']
+    assert Path(result['folder'])==Path(folder)
+    kept=Path(folder)/result['frames'][0]['file']
+    original=kept.read_bytes()
+    before=set(Path(folder).iterdir())
     window.batch_to(folder);wait_idle()
-    manifest=json.loads((Path(window.last_export)/'manifest.json').read_text('utf-8'))
-    assert len(manifest)==6 and all(row['params']['exposure']==.25 for row in manifest)
+    assert Path(window.last_export)==Path(folder)
+    new=set(Path(folder).iterdir())-before
+    assert len(new)==6 and all(path.is_file() and path.suffix=='.tif' for path in new)
+    assert kept.read_bytes()==original and kept.with_stem(kept.stem+'-2') in new
+    window.jpeg_export.setChecked(True)
+    paired=Path(folder)/'paired.tif'
+    paired.with_suffix('.jpg').write_bytes(b'existing JPEG')
+    window.export_to(str(paired));wait_idle()
+    tiff=paired.with_stem('paired-2')
+    with Image.open(tiff.with_suffix('.jpg')) as jpeg:
+        assert jpeg.format=='JPEG' and jpeg.info.get('icc_profile')
+        assert (jpeg.height,jpeg.width)==read_tiff(tiff).shape[:2]
+    assert paired.with_suffix('.jpg').read_bytes()==b'existing JPEG'
+    before=set(Path(folder).iterdir())
+    window.batch_to(folder);wait_idle()
+    outputs=set(Path(folder).iterdir())-before
+    assert len(outputs)==12
+    assert all(path.with_suffix('.jpg') in outputs for path in outputs if path.suffix=='.tif')
     # GUI adapter's preview uses the same core pixels, without JPEG round trips.
     p=model.params(window.p)
     expected=(core.process(model.engine.STATE['preview'],p)*255+.5).astype(np.uint8)

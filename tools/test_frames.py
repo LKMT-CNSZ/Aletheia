@@ -42,6 +42,10 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build'/'tests',prefix='frames-') as f
     extra=copy.deepcopy(rows[-1]);extra['id']='extra-frame';extra['box'][1]+=10;rows.append(extra)
     spec={'mode':'strip','manual':{'rotation':preview['rotation'],'frames':rows}}
     window.apply_frames(spec);idle()
+    applied_spec=copy.deepcopy(model.engine.STATE['native_input'])
+    assert [r['box'] for r in applied_spec['manual']['frames']]==[r['box'] for r in rows]
+    assert 'base' in applied_spec['manual']['frames'][0]
+    spec=applied_spec
     assert model.engine.STATE['native_loaded'] is source and model.engine.STATE['native_source']==identity
     assert window.info['strip']['manual'] and window.info['strip']['index']==0
     assert window.p['exposure']==-.4 and model.engine.STATE['frame_params'][1]['exposure']==.35
@@ -50,7 +54,7 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build'/'tests',prefix='frames-') as f
     project=folder/'手动工程.filmproj';window.save_project_to(str(project));idle()
     data=model.read_project(project);assert data['version']==8 and data['input']==spec and not window.project_dirty
     before=model.export_roll(folder,window.p,False,threading.Event(),lambda *args:None)
-    manifest=json.loads((Path(before['folder'])/'manifest.json').read_text('utf-8'))
+    manifest=before['frames']
     raw=source.linear
     for i,row in enumerate(manifest):
         box=rows[i]['box'];x0,y0,x1,y1=box
@@ -60,17 +64,17 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build'/'tests',prefix='frames-') as f
         expected=core.process(cut,model.params(row['params']))
         actual=read_tiff(str(Path(before['folder'])/row['file']))
         assert np.array_equal(actual,(expected*65535+.5).astype(np.uint16)),i
-        recipe=json.loads(Path(str(Path(before['folder'])/row['file'])+'.json').read_text('utf-8'))
-        assert recipe['source_region']==row['source_region']
+        assert not Path(str(Path(before['folder'])/row['file'])+'.json').exists()
     window.restore_frames();idle()
     assert model.project_signature(model.project_snapshot(window.p,window.project_options()))==old_signature
     assert model.engine.STATE['frame_params'][0]['crop']==[.1,.1,.9,.9]
     window.open_project_path(str(project));idle()
     assert model.engine.STATE['native_input']==spec and not window.project_dirty
     restored=model.export_roll(folder,window.p,False,threading.Event(),lambda *args:None)
-    again=json.loads((Path(restored['folder'])/'manifest.json').read_text('utf-8'))
+    again=restored['frames']
     for a,b in zip(manifest,again):
-        assert a==b
+        assert {k:v for k,v in a.items() if k!='file'}=={k:v for k,v in b.items() if k!='file'}
+        assert Path(b['file']).stem==Path(a['file']).stem+'-2'
         assert np.array_equal(read_tiff(str(Path(before['folder'])/a['file'])),read_tiff(str(Path(restored['folder'])/b['file'])))
 
     # Automatic session restores manual layout, order, frame and all parameters.
@@ -127,7 +131,8 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build'/'tests',prefix='frames-') as f
     h,w=model.engine.STATE['full'].shape[:2]
     window.apply_frames({'mode':'strip','manual':{'rotation':0,'frames':[{'id':'frame-0','box':[0,0,w,h]}]}});idle()
     assert window.p['flat_mode']=='off'
-    assert np.allclose(window.p['base'],core.auto_base(model.engine.STATE['native_loaded'].linear))
+    full=model.engine.STATE['native_loaded'].linear
+    assert np.allclose(window.p['base'],model.strip.film_base_from_edges(full) or core.auto_base(full))
     window.restore_frames();idle();assert window.p['flat_mode']=='reference' and window.p['flat_field']==before_flat
 
     # Horizontal scan with two manually split regions; exact full-source pixels.
@@ -148,5 +153,42 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build'/'tests',prefix='frames-') as f
     assert model.calibration_preview(window.p)['parameter_signature']!=before_signature
     # Cached source survives all layout edits; the physical original file is intact.
     assert model.source_identity(horizontal)['sha256']==model.engine.STATE['native_source']['sha256']
+
+    # A single frame correction must preserve another frame's own grade and
+    # pre-existing strip illumination, even with carry enabled and after reopen.
+    window.open_mode.setCurrentIndex(window.open_mode.findData('auto'))
+    window.open_path(str(ROOT/'samples'/'pro-strip-demo.tif'));idle()
+    window.keep_check.setChecked(False)
+    window.go_frame(2);idle()
+    window.strip_flat();idle()
+    window.edit_parameter('exposure',-.6,True)
+    window.apply_geometry({'rotation':0,'straighten':0.,'crop':[.1,.1,.9,.9]});idle()
+    saved_grade=copy.deepcopy(window.p)
+    saved_pixels=model.preview(saved_grade)['pixels'].copy()
+    assert saved_grade['flat_mode']=='strip' and saved_grade['flat_field']
+    window.go_frame(0);idle();window.edit_parameter('exposure',.25,True);idle()
+    window.keep_check.setChecked(True)
+    from studio_worker import frame_parameters
+    before_layout=model.project_snapshot(window.p,window.project_options())
+    assert '4' not in before_layout['frames']
+    _,unvisited=frame_parameters(before_layout,4)
+    window.open_frames();idle();dialog=window.frame_dialog
+    dialog.frames.setCurrentRow(0);dialog.set_input_angle(.25);dialog.apply_result();idle()
+    assert model.engine.STATE['frame_params'][2]==saved_grade
+    assert model.engine.STATE['frame_params'][4]==unvisited.__dict__
+    layout_project=folder/'保留单帧编辑.filmproj';window.save_project_to(str(layout_project));idle()
+    window.go_frame(2);idle()
+    assert window.p==saved_grade
+    assert np.array_equal(model.preview(window.p)['pixels'],saved_pixels)
+    window.open_project_path(str(layout_project));idle()
+    assert window.keep_check.isChecked()
+    window.go_frame(2);idle()
+    assert window.p==saved_grade
+    assert np.array_equal(model.preview(window.p)['pixels'],saved_pixels)
+    # Explicit whole-roll grading still works and does not copy that frame's
+    # frozen grid to other frames in the manual layout.
+    window.apply_roll();idle()
+    assert model.engine.STATE['frame_params'][2]['flat_field']==saved_grade['flat_field']
+    assert model.engine.STATE['roll_params']['flat_mode']=='off'
     window.loaded=False;window.close();app.processEvents()
 print('PASS frames: explicit modes, cached originals, stable-id edit retention, changed-box geometry reset, layout undo, v2 project/session, exact ordered TIFF and source-region recipes, rollback, modal editing/grid/reorder/cancel, horizontal scans and calibration provenance')

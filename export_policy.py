@@ -1,5 +1,6 @@
 """Portable, deterministic export names. User templates cannot create directories."""
 from pathlib import Path
+from itertools import count
 import re,string
 DEFAULT='{source}-f{frame:04d}-positive'
 FIELDS={'source','frame','roll','date'}
@@ -38,3 +39,16 @@ def names(source,indices,config=None,legacy=None):
     result=[filename(source,i+1,config,legacy(i) if legacy else None) for i in indices]
     if len({n.casefold() for n in result})!=len(result):raise ValueError('模板会产生重复文件名，请加入 {frame:04d}')
     return result
+
+
+def available_name(directory,name,reserved=(),jpeg=False):
+    from file_io import io_path
+
+    stem,ext=Path(name).stem,Path(name).suffix
+    for number in count(1):
+        candidate=name if number==1 else f'{stem}-{number}{ext}'
+        path=io_path(Path(directory)/candidate)
+        sibling=path.with_suffix('.jpg')
+        if (candidate.casefold() not in reserved and not path.exists() and not path.is_symlink()
+                and (not jpeg or (not sibling.exists() and not sibling.is_symlink()))):
+            return candidate

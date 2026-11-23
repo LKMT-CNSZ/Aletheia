@@ -8,11 +8,26 @@ PRESETS={
     'clear':dict(hdr_enabled=True,hdr_strength=1.3,hdr_start=.45,hdr_softness=.75,hdr_limit=3.,sdr_hdr_rolloff=1.,sdr_hdr_exposure=-.1),
     'soft':dict(hdr_enabled=True,hdr_strength=.5,hdr_start=.65,hdr_softness=1.,hdr_limit=1.5,sdr_hdr_rolloff=1.,sdr_hdr_exposure=.1),
 }
+for _preset in PRESETS.values():_preset.update(hdr_chroma=.85,hdr_sky_protect=.6,hdr_target='all')
+for _preset in PRESETS.values():_preset.update(hdr_punch=0.,hdr_brilliance=0.)
+PRESETS.update({
+    'bright':dict(hdr_strength=1.4,hdr_start=.4,hdr_softness=.75,hdr_limit=2.2,hdr_chroma=.8,hdr_sky_protect=.65),
+    'impact':dict(hdr_strength=1.8,hdr_start=.22,hdr_softness=.48,hdr_limit=2.4,hdr_chroma=.85,hdr_sky_protect=.6),
+})
+# Every preset is complete. In particular, switching from an earlier aggressive
+# style cannot retain its SDR desaturation/contrast or HDR whitening controls.
+_preset_defaults=dict(hdr_enabled=True,hdr_punch=0.,hdr_brilliance=0.,hdr_target='all',
+    hdr_curve=[[0.,0.],[1.,1.]],sdr_hdr_rolloff=1.,sdr_hdr_exposure=0.,
+    sdr_hdr_contrast=0.,sdr_hdr_highlights=0.,sdr_hdr_saturation=0.,sdr_hdr_color_safe=True)
+for _name,_settings in list(PRESETS.items()):
+    PRESETS[_name]={**_preset_defaults,**_settings,
+        'hdr_punch':0.,'hdr_brilliance':0.,'sdr_hdr_color_safe':True,
+        'sdr_hdr_contrast':0.,'sdr_hdr_highlights':0.,'sdr_hdr_saturation':0.}
 
 def preset(value,name):
     import copy
     if name not in PRESETS:raise ValueError('Unknown HDR preset')
-    out=copy.deepcopy(value);out.update(PRESETS[name]);return out
+    out=copy.deepcopy(value);out.update(copy.deepcopy(PRESETS[name]));return out
 
 def encode(value,space='srgb'):
     x=np.maximum(np.asarray(value,np.float32),0)
@@ -31,7 +46,12 @@ def grade(linear,p):
     import core
     y=np.maximum(core.luma(linear,p.working_space),0)
     weight=np.clip((y-p.hdr_start)/p.hdr_softness,0,1);weight=weight*weight*(3-2*weight)
+    import hdr_advanced
+    if p.hdr_chroma or p.hdr_sky_protect or p.hdr_target!='all':weight=hdr_advanced.weights(linear,p,weight)
     out=linear*np.exp2(weight*p.hdr_strength)[...,None]
+    if p.hdr_punch:out*=np.exp2(weight*np.float32(2*p.hdr_punch))[...,None]
+    out=hdr_advanced.brilliance(out,weight,p.hdr_brilliance)
+    out=hdr_advanced.curve(out,p.hdr_curve)
     maximum=np.maximum(out.max(axis=-1),0);limit=2.**p.hdr_limit;knee=limit*.75
     delta=np.maximum(maximum-knee,0);mapped=knee+delta/(1+delta/(limit-knee))
     return (out*np.where(maximum>knee,mapped/np.maximum(maximum,1e-8),1)[...,None]).astype(np.float32)
@@ -43,7 +63,11 @@ def sdr_rendition(linear,p):
     y=core.luma(out,p.working_space);delta=np.maximum(y-.5,0)
     mapped=np.where(y>.5,.5+delta/(1+delta/.5),y)
     target=y+(mapped-y)*p.sdr_hdr_rolloff
-    return np.clip(out*(target/np.maximum(y,1e-8))[...,None],0,1).astype(np.float32)
+    import hdr_advanced
+    rendition=out*(target/np.maximum(y,1e-8))[...,None]
+    rendition=hdr_advanced.sdr_controls(rendition,p)
+    if p.sdr_hdr_color_safe:rendition=hdr_advanced.color_safe_sdr(rendition)
+    return np.clip(rendition,0,1).astype(np.float32)
 
 
 def render(source,p,repair_context=None,tone_context=None,tone_box=None):
@@ -53,8 +77,13 @@ def render(source,p,repair_context=None,tone_context=None,tone_box=None):
     reference white stays at 1.0 and above-white samples remain floating point.
     """
     import core,calibration,restoration,local_edits,geometry
-    p=p.normalized();p.tone_rolloff=0;p.scene_hdr=True
+    # Keep the negative density ceiling for ordinary scans. Removing it here
+    # lets opaque film borders dominate metering before HDR grading even starts.
+    p=p.normalized();p.tone_rolloff=0
     linear=core.working_linear(source,p,repair_context,tone_context,tone_box,unbounded=True)
+    if p.tone_balance:
+        import tone_balance
+        linear=tone_balance.apply(linear,p)
     if p.calibration and p.calibration_strength>0 and p.mode!='bw_negative':
         if p.calibration.get('working_space','srgb')!=p.working_space:raise ValueError('HDR calibration working space mismatch')
         matrix=np.eye(3,dtype=np.float32)+np.float32(p.calibration_strength)*(np.asarray(p.calibration['matrix'],np.float32)-np.eye(3,dtype=np.float32))

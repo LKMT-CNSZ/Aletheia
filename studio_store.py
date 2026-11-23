@@ -22,6 +22,7 @@ def engine_signature():
     import PIL
     root=Path(__file__).resolve().parent
     files=('hdr_io.py','hdr_color.py','metering.py','tone_mapping.py','core.py','viewport_render.py','region_context.py','calibration_solver.py','chart_metrics.py','export_policy.py','local_edits.py','calibration.py','restoration.py','colorio.py','input_color.py','working_color.py','geometry.py','perspective.py','server.py','strip.py','loader.py','tiffio.py','tiffread.py','desktop_model.py','document_cache.py','studio_worker.py','file_io.py')
+    files+=('tone_balance.py',)
     versions={'python':list(sys.version_info[:3]),'numpy':numpy.__version__,'pillow':PIL.__version__,
               'files':{name:sha256(root/name) for name in files}}
     dependencies=root.parent/'dependencies.json'
@@ -184,25 +185,25 @@ class StudioStore:
         return result
 
     def enqueue(self,identifiers,output,whole_roll=True,export_options=None):
+        from export_policy import DEFAULT,names,options
         output=Path(output).resolve();made=[]
+        export_options=export_options or {}
         with self.connection() as db:
             for identifier in dict.fromkeys(identifiers):
                 asset=self.asset(db.execute('SELECT * FROM assets WHERE id=?',(identifier,)).fetchone())
                 snapshot=asset['snapshot']
                 if snapshot is None:raise ValueError('请先打开并修片：'+asset['name'])
-                if export_options is not None:
-                    from export_policy import options
-                    snapshot['_export']=options(export_options.get('template',''),asset['roll'],export_options.get('date',''))
+                snapshot['_export']=options(export_options.get('template') or DEFAULT,asset['roll'],export_options.get('date',''))
+                snapshot['_flat_export']=True
+                snapshot['_export_jpeg']=bool(export_options.get('jpeg'))
                 snapshot['_queue_engine']=engine_signature()
                 count=snapshot['frame_count'];current=snapshot['current_frame']
                 indices=list(range(count)) if whole_roll else [current]
-                from export_policy import names
                 names(snapshot['source']['path'],indices,snapshot.get('_export'))
-                stem=''.join('_' if c in '<>:"/\\|?*' or ord(c)<32 else c for c in Path(asset['name']).stem)[:60].rstrip(' .')
-                job=uuid.uuid4().hex;destination=output/('film-'+stem+'-'+job)
+                job=uuid.uuid4().hex
                 now=time.time()
                 db.execute('INSERT INTO jobs(id,asset_id,name,snapshot,indices,destination,status,total_count,created,updated) VALUES(?,?,?,?,?,?,?,?,?,?)',
-                    (job,identifier,asset['name'],encoded(snapshot),encoded(indices),str(destination),'queued',len(indices),now,now));made.append(job)
+                    (job,identifier,asset['name'],encoded(snapshot),encoded(indices),str(output),'queued',len(indices),now,now));made.append(job)
         return made
     @staticmethod
     def job(row):
@@ -212,6 +213,32 @@ class StudioStore:
         return result
     def get_job(self,identifier):
         with self.connection() as db:return self.job(db.execute('SELECT * FROM jobs WHERE id=?',(identifier,)).fetchone())
+    def flatten_unstarted_export(self,job):
+        """Redirect old jobs before they have materialized any output."""
+        snapshot=job['snapshot']
+        destination=Path(job['destination'])
+        if snapshot.get('_flat_export') or job['outputs'] or io_path(destination).exists():
+            return
+        if not destination.name.startswith('film-') or not destination.name.endswith('-'+job['id']):
+            return
+        output=destination.parent
+        if snapshot.get('_batch'):
+            suffix='-'+snapshot['_batch']['id'][:8]
+            for possible in (output,output.parent):
+                if possible.name.startswith('batch-') and possible.name.endswith(suffix):
+                    output=possible.parent
+                    break
+            else:
+                return
+        from export_policy import DEFAULT,options
+        snapshot['_export']=snapshot.get('_export') or options()
+        if not snapshot['_export']['template']:
+            snapshot['_export']['template']=DEFAULT
+        snapshot['_flat_export']=True
+        with self.connection() as db:
+            db.execute('UPDATE jobs SET destination=?,snapshot=? WHERE id=?',
+                       (str(output),encoded(snapshot),job['id']))
+        job['destination']=str(output)
     def jobs(self):
         with self.connection() as db:return [self.job(row) for row in db.execute('SELECT * FROM jobs ORDER BY created DESC')]
     def job_summaries(self):

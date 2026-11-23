@@ -3,6 +3,7 @@ from pathlib import Path
 import copy,gc,hashlib,json,os,time,uuid
 import numpy as np
 import core
+import hdr_advanced
 from PIL import Image,ImageDraw,ImageCms
 from batch_store import BatchStore,FIELDS,clone,snapshot_key
 from studio_store import queue_lock
@@ -34,8 +35,9 @@ def fresh_snapshot(studio,item,config,overwrite):
     if config['method']=='existing' and not saved:raise ValueError('此照片没有已有编辑')
     if saved and not overwrite:
         model.open_project(studio.materialize(saved,'batch-'+item['asset']));return clone(saved)
+    space = config['working_space']
     opened=model.open_image(asset['path'],include_thumbnails=False,input_mode=item['input_mode'] or config['input_mode'],
-                            input_color=config['input_color'],working_space=config['working_space'])
+                            input_color=config['input_color'],working_space=None if space == 'auto' else space)
     p=opened['params'];count=(opened['info'].get('strip') or {}).get('frames',1)
     for index in range(1,count):p=model.change_frame(index,p,False,True)['params']
     snapshot=model.project_snapshot(p)
@@ -79,7 +81,10 @@ def sync_snapshot(snapshot,origin,reference,fields,sync_mode,delta,offset,shared
         out['roll_params']=model.params(roll).__dict__
     if any(model.modern_tone(v) for v in [*out['frames'].values(),out.get('roll_params') or {}]):out['version']=8
     if any(model.params(v).hdr_enabled for v in [*out['frames'].values(),out.get('roll_params') or {}]):out['version']=9
-    return out
+    if any(hdr_advanced.active(model.params(v)) for v in [*out['frames'].values(),out.get('roll_params') or {}]):out['version']=10
+    if any(hdr_advanced.impact_active(model.params(v)) for v in [*out['frames'].values(),out.get('roll_params') or {}]):out['version']=11
+    if any(hdr_advanced.color_safe_active(model.params(v)) for v in [*out['frames'].values(),out.get('roll_params') or {}]):out['version']=12
+    return model.update_color_version(out)
 
 def thumbnail(studio,batch,item,snapshot,prefix):
     import desktop_model as model
@@ -160,7 +165,7 @@ def execute(studio,identifier,token,progress=lambda *a:None):
             operations=['check','prepare','style'] if operation=='pipeline' else [operation]
             if operation=='pipeline':operations=operations[:operations.index(config['stop_after'])+1]
             ids=[i['asset'] for i in data['items'] if not i['skip'] and i['selected'] and (run['ids'] is None or i['asset'] in run['ids'])]
-            label=('批量重新准备' if run['overwrite'] else '批次同步')+' · '+token
+            label=('批量分区校色' if operation=='negative_color' else '批量重新准备' if run['overwrite'] else '批次同步')+' · '+token
             for stage in operations:
                 # Freeze reference values for an entire stage, even when the
                 # reference itself is among the files being changed.
@@ -204,6 +209,26 @@ def execute(studio,identifier,token,progress=lambda *a:None):
                             item.update(snapshot=snapshot,stage='styled',error='',reviewed=False)
                             item['preview_after']=thumbnail(studio,identifier,item,snapshot,'after')
                             store.commit_item(identifier,item,snapshot,label if config['method']=='sync' else None,expected)
+                        elif stage=='negative_color':
+                            asset=studio.get_asset(asset_id)
+                            current=asset['snapshot']
+                            snapshot=clone(current or item['snapshot'])
+                            if asset['flag']!='reject' and snapshot is not None:
+                                before=clone(snapshot)
+                                model.open_project(studio.materialize(snapshot,'batch-color-'+asset_id))
+                                for key,value in snapshot['frames'].items():
+                                    if value['mode']!='color_negative':continue
+                                    index=int(key)
+                                    if index!=model.engine.STATE['frame_index']:
+                                        model.change_frame(index,value,False,False)
+                                    snapshot['frames'][key]=model.negative_color(value)
+                                if before!=snapshot:
+                                    model.update_color_version(snapshot)
+                                    item['preview_before']=thumbnail(studio,identifier,item,before,'before')
+                                    item['preview_after']=thumbnail(studio,identifier,item,snapshot,'after')
+                                    item.update(snapshot=snapshot,valid=True,verified_session=run['session'],
+                                                reviewed=False,error='',stage='prepared')
+                                    store.commit_item(identifier,item,snapshot,label,snapshot_key(current))
                         elif stage=='preview':
                             if not item['snapshot']:continue
                             checked_identity(studio,item);model.open_project(studio.materialize(item['snapshot'],'batch-'+asset_id))

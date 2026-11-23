@@ -1,8 +1,6 @@
 # Aletheia
 
-**3.1.1 正式版：**新增片边排除测光、单张高光/阴影/黑白场、局部色调映射、多曝光 HDR 合成、线性 ICC float32 HDR TIFF 和 Windows 原生 HDR 预览。用法及限制见 [HDR 指南](HDR-GUIDE.md)。HDR 显示目前为实验功能，已验证 FP16 通道和 SDR 拒绝，HDR 硬件视觉验收尚待完成。
-
-**本版更新：**完整中英文深色安装器、安装后验证及旧版清理；HDR 屏幕适配、持久调色和三种预设；Ultra HDR JPEG 增益图导出。
+**3.2.0 正式版**　改进整卷切帧、重估片基、独立帧编辑与缩略图，支持 SDR 和 HDR TIFF 无损压缩，并恢复双语安装器的实拍示意。
 
 **在本机完成胶片反相、逐帧精修与批量交付。**
 
@@ -10,7 +8,7 @@ Aletheia 是一款面向 Windows 的胶片数字化修片工具，适用于相�
 
 软件采用黑白灰的极简“暗房”布局：中央大图、右侧调色、底部照片与胶片帧导航。既适合逐张处理，也支持把一批照片组织成可暂停、可恢复、经过人工复核的导出流程。
 
-**当前版本：3.1.1 正式版 · Windows x64 · 安装版 / 免安装版**
+**当前版本：3.2.0 正式版 · Windows x64 · 安装版 / 免安装版**
 
 [English introduction](README.en.md)
 
@@ -77,26 +75,23 @@ Aletheia 是一款面向 Windows 的胶片数字化修片工具，适用于相�
 
 ### 工程与 16bit TIFF 交付
 
-`.filmproj` 工程保存输入设置、片框、逐帧编辑、整卷模板及相关色彩参数；JSON 配方用于记录与复用调色。成品支持单帧、整卷和队列导出，输出 16bit RGB TIFF，并附配方或清单。
+`.filmproj` 工程保存输入设置、片框、逐帧编辑、整卷模板及相关色彩参数。JSON 配方可通过「保存参数配方」单独保存。单帧、整卷和队列导出只生成 TIFF；单帧显示写入进度，整卷和队列显示已完成帧数。
 
 照片库支持备份与恢复；单卷迁移包可明确打包工程和原片。普通工程与照片库备份不会自动包含原片，迁移时需要分别保留原片和成品。
 
 ## 下载与安装
 
-前往 [v3.1.1 下载页面](https://github.com/LKMT-CNSZ/Aletheia/releases/tag/v3.1.1)，选择 Windows x64 发行文件：
+从 [v3.2.0 发布页](https://github.com/LKMT-CNSZ/Aletheia/releases/tag/v3.2.0) 获取 Windows x64 版。
 
 | 文件 | 用途 |
 | --- | --- |
-| [FilmInvert-Native-3.1.1-setup-win64-20261030.exe](https://github.com/LKMT-CNSZ/Aletheia/releases/download/v3.1.1/FilmInvert-Native-3.1.1-setup-win64-20261030.exe) | 常规安装，提供开始菜单、可选桌面入口与卸载 |
-| [FilmInvert-Native-3.1.1-compat-win64-20261030.zip](https://github.com/LKMT-CNSZ/Aletheia/releases/download/v3.1.1/FilmInvert-Native-3.1.1-compat-win64-20261030.zip) | 免安装版，完整解压后直接运行 |
-| [FilmInvert-Native-3.1.1-source-20261030.zip](https://github.com/LKMT-CNSZ/Aletheia/releases/download/v3.1.1/FilmInvert-Native-3.1.1-source-20261030.zip) | 对应应用源码、构建与验证脚本 |
-| [SHA256 文本清单](https://github.com/LKMT-CNSZ/Aletheia/releases/download/v3.1.1/SHA256-3.1.1.txt) / [JSON 清单](https://github.com/LKMT-CNSZ/Aletheia/releases/download/v3.1.1/SHA256-3.1.1.json) | 发行文件完整性校验 |
+| [Aletheia-3.2.0-setup-win64.exe](https://github.com/LKMT-CNSZ/Aletheia/releases/download/v3.2.0/Aletheia-3.2.0-setup-win64.exe) | 安装版 |
+| [Aletheia-3.2.0-win64.zip](https://github.com/LKMT-CNSZ/Aletheia/releases/download/v3.2.0/Aletheia-3.2.0-win64.zip) | 免安装版，解压后运行「启动 Aletheia.cmd」 |
+| [Aletheia-3.2.0-source.zip](https://github.com/LKMT-CNSZ/Aletheia/releases/download/v3.2.0/Aletheia-3.2.0-source.zip) | 对应源码与构建脚本 |
+| [SHA256 校验清单](https://github.com/LKMT-CNSZ/Aletheia/releases/download/v3.2.0/SHA256-3.2.0.txt) | 下载完整性校验 |
 
-两种运行包均包含独立的官方 Python / Qt 运行时，**不需要另外安装 Python 或 Qt**。
+安装器可在新版验证成功后卸载符合条件的旧版本。用法见 [软件介绍](软件介绍.md) 和 [HDR 指南](HDR-GUIDE.md)。
 
-**安装版**只为当前 Windows 用户安装，使用新的空目录，拒绝覆盖旧安装。安装后从开始菜单启动；卸载保留用户数据。
-
-**免安装版**请先完整解压，再双击「启动胶片工作室.cmd」。首次正常启动会生成本机快捷方式；移动整个目录后，用 CMD 入口启动一次即可刷新。请保持 `app`、`runtime`、`THIRD_PARTY` 与启动文件的相对位置。
 
 ## 快速上手
 
@@ -107,7 +102,7 @@ Aletheia 是一款面向 Windows 的胶片数字化修片工具，适用于相�
 3. 检查片基和测光，调整曝光、反差、黑白场与白平衡。
 4. 按需要处理曲线、HSL、裁切、校直、透视与局部瑕疵。
 5. 使用 `Ctrl+1` 检查全尺寸结果，按 `Ctrl+Alt+S` 保存工程。
-6. 选择输出空间和目录，按 `Ctrl+Shift+S` 导出 TIFF 与配方。
+6. 选择输出空间和目录，按 `Ctrl+Shift+S` 导出 TIFF。
 
 ### 完成一批照片
 
@@ -125,7 +120,7 @@ Aletheia 是一款面向 Windows 的胶片数字化修片工具，适用于相�
 | 相机 RAW | 包括 NEF、CR2 / CR3、ARW、DNG、RAF、ORF、RW2 等；实际兼容性取决于随包 rawpy / LibRaw 与具体机型、容器 |
 | 扫描与常规图像 | TIFF、PNG、JPEG、BMP、WebP；部分 FFF / 3FR 可通过其 TIFF 容器读取 |
 | 色彩输入 | 明确的 RGB 编码，以及受支持的 v2 / v4 RGB matrix/TRC ICC |
-| 输出 | 16bit RGB TIFF、ICC、JSON 配方及整卷 / 批次清单 |
+| 输出 | 带 ICC 配置的 16bit RGB TIFF，或 32 位浮点 HDR TIFF |
 
 16bit TIFF 使用专用读取路径。BigTIFF、tiled、planar 分离、CMYK、LUT 输入 ICC 等不在保证范围内。扩展名受支持也不代表所有相机、压缩方式和文件变体都已验证。
 
@@ -154,7 +149,7 @@ Aletheia 是一款面向 Windows 的胶片数字化修片工具，适用于相�
 
 ## 验证与已知限制
 
-3.1.1 的 47 项随包隔离检查已通过，另完成 12 组旧核心逐像素一致性对照；当前验证范围见 [本版验证说明](RELEASE-VALIDATION-3.1.1.md)，实际执行和交付校验以同版交付验证 JSON 为准。3.0.1 的 35 项结果与下面的 3.0.0 结果是历史证据。
+3.1.1 的 47 项随包隔离检查已通过，另完成 12 组旧核心逐像素一致性对照；当前验证范围见 [本版验证说明](RELEASE-VALIDATION-3.2.0.md)，实际执行和交付校验以同版交付验证 JSON 为准。3.0.1 的 35 项结果与下面的 3.0.0 结果是历史证据。
 
 3.0.0 基于已验收的 rc13 完成正式分发，已通过 34 项随包隔离检查，以及中文 / 空格路径、安装与卸载、实际禁写目录启动与回退、旧工程 / 会话 / 照片库恢复、TIFF 像素一致性、归档完整性与隐私排除检查。自动化 Qt 启动与交互测试采用 offscreen 平台，具体范围见验证文档。
 
@@ -189,15 +184,12 @@ Aletheia 是一款面向 Windows 的胶片数字化修片工具，适用于相�
 
 显示器报告峰值缺失、低于 80 nit 或高于 10000 nit 时，HDR 预览暂按 1000 nit 估计，状态栏会明确提示。请使用 Windows HDR 校准核实屏幕能力；该估计不改动调色参数或 HDR 导出数据。
 
-## 统一 TIFF 导出
+## TIFF 导出与无损压缩
 
-顶部「导出 TIFF…」及 Ctrl+Shift+S 的保存窗口，在「保存类型」中提供 SDR TIFF - 16bit 和 HDR TIFF - Float32。主画布 HDR 开启时默认选中 HDR；可手动切回 SDR。HDR 使用浮点线性 TIFF、嵌入线性 ICC 并保留超过参考白的亮部。文件菜单原有 HDR 入口也使用此窗口。普通整卷／批量导出仍为 SDR。
+「导出 TIFF / HDR…」仅提供 TIFF：SDR 16 位和 HDR Float32，各有「无损压缩 ZIP」与「不压缩」选项。默认无损压缩，记住上次选择的压缩方式；主画布 HDR 开启时默认选 HDR TIFF，文件菜单「导出线性 HDR TIFF」也默认 HDR。JPEG XR 与 Ultra HDR JPEG 已从导出界面移除。单张导出可同时保存普通 SDR JPEG 副本。整卷／批量导出继续使用 SDR 16 位无损 TIFF。
 
-## Windows HDR 成品导出
+ZIP 使用标准 TIFF Deflate 无损压缩，不缩小分辨率、不降低位深。HDR 仍为 32 位浮点 RGB，保留线性 ICC、处理元数据与超过参考白的亮部；压缩文件可重新导入。未压缩数据每像素 12 字节，4320 × 5760 约 299 MB（285 MiB）。实际压缩率取决于画面、颗粒和噪声，仍可能较大。保存为 HDR TIFF 不保证所有看图软件都能按 HDR 亮度显示。
 
-「导出 TIFF / HDR…」新增 Windows HDR - JPEG XR (*.jxr)。主画布 HDR 开启时默认选中 JXR；HDR TIFF 仍可选，文件菜单「导出线性 HDR TIFF」默认选择 TIFF。JXR 使用 Windows 原生 WIC 编码器，工作空间转换为线性 sRGB 后按 203/80 缩放为 scRGB 绝对亮度单位，保留超过 1 的数据，不烘焙当前屏幕的高光肩部。
-
-JXR 采用编码器的 Lossless 选项，但浮点预处理存在精度量化，不承诺原浮点位逐字节一致；HDR TIFF 继续用作浮点编辑母版。JXR 面向 Windows HDR 查看，不能保证所有平台都能打开。不同查看器仍可能采用不同高光映射，需在目标软件实测。原生编码/解码的数值和保存窗口路径验证已通过。用户已用 Windows「照片」打开同图 JXR，反馈亮度更接近 Aletheia 预览；这是用户目视反馈，尚未进行仪器测量或跨设备验收。JXR 暂不支持重新导入 Aletheia，继续编辑请保留工程和 TIFF 母版。
 
 ## 首次查看显影与帧导航
 
@@ -215,7 +207,7 @@ JXR 采用编码器的 Lossless 选项，但浮点预处理存在精度量化，
 
 ## 软件图标
 
-应用窗口、启动窗口的任务栏图标、快捷方式和安装包统一使用新的红白 Aletheia 胶片标志。Windows ICO 包含 16、24、32、48、64、128、256 像素尺寸。启动显影画面继续使用胶片吉祥物，时长仍为 1.2 秒。
+应用窗口、启动窗口的任务栏图标、快捷方式和安装包统一使用新的红白 FilmInvert 胶片标志。Windows ICO 包含 16、24、32、48、64、128、256 像素尺寸。启动显影画面继续使用胶片吉祥物，时长仍为 1.2 秒。
 
 
 ## 快捷方式图标缓存修复
@@ -227,21 +219,17 @@ JXR 采用编码器的 Lossless 选项，但浮点预处理存在精度量化，
 
 ## HDR 显示适配与调色
 
-HDR 显示适配与照片调色分开管理。主画布 HDR 只切换显示。右侧「HDR」页显式勾选「启用 HDR 调色」后，亮部强度、起点、过渡、HDR 范围和 SDR 版本设置才参与处理；随每张/每帧编辑、撤销、工程、配方和批次影调同步保存。HDR TIFF 和 JXR 共享同一份浮点调色数据。SDR TIFF 与普通预览使用同一 HDR 数据的 SDR 映射。参数关闭时保留原有算法。
+本版替换 3.1.1 的全局预览增强，不会自动把旧预览增强写入照片。主画布 HDR 只切换显示。右侧「HDR」页显式勾选「启用 HDR 调色」后，亮部强度、起点、过渡、HDR 范围和 SDR 版本设置才参与处理；随每张/每帧编辑、撤销、工程、配方和批次影调同步保存。HDR TIFF 保存浮点调色数据。SDR TIFF 与普通预览使用同一 HDR 数据的 SDR 映射。参数关闭时保留原有算法。
 
 HDR 调色工程版本 9、配方版本 7；旧程序会拒绝新版本。强度为 0 不主动提升亮部，范围上限仍参与高光过渡。扫描或拍摄已丢失的信息无法恢复。
 
-「HDR 显示…」读取当前显示器状态、位深、系统 SDR 参考白与峰值报告；选择窗口所在屏幕对应的 DXGI 显卡，跨屏重新检测/创建显示通道。可按显示器在本机手动设置参考白、峰值。缺失或异常报告使用明确提示的估计值，需结合校准结果复核；不把估计当成实测。显示设置不写入照片、HDR TIFF 或 JXR；JXR 的名义参考白仍按 203 nits 编码，不烘焙某台屏幕的显示转换，不承诺不同查看器外观完全相同。
+「HDR 显示…」读取当前显示器状态、位深、系统 SDR 参考白与峰值报告；选择窗口所在屏幕对应的 DXGI 显卡，跨屏重新检测/创建显示通道。可按显示器在本机手动设置参考白、峰值。缺失或异常报告使用明确提示的估计值，需结合校准结果复核；不把估计当成实测。显示设置不写入照片或 HDR TIFF；HDR TIFF 的名义参考白为 203 nits，不烘焙某台屏幕的显示转换，不承诺不同查看器外观完全相同。
 
 「对照 SDR 输出」只切换显示，不改照片。HDR 扩展直方图按最亮 RGB 通道统计，0 EV 为名义白；屏幕余量由峰值/参考白计算。「HDR 范围着色」显示黄色 HDR 亮部、红色超屏幕范围。SDR 屏可调 HDR、查看 SDR 版本并导出，无法替代 HDR 屏视觉检查。开启失败弹窗保留详情和 Windows 设置入口。多显示器/多显卡切换已做模拟与本机通道测试，尚未完成跨硬件视觉验收。本版 HDR 显示仍为实验功能。
 
 
-## 胶片 HDR 预设与 Ultra HDR JPEG
+## 胶片 HDR 预设
 
-在「HDR」页点击「自然」「通透」「柔和」即可开启 HDR 调色并应用预设。自然温和提升亮部，通透提供更明显的亮部层次，柔和使用较小范围和更长过渡。三者仅调整 HDR 和 SDR 版本参数，保留已有曝光、白平衡、曲线、胶片设置和局部编辑；可撤销，随后可微调。参数随照片/帧、工程、配方与批次影调同步保存。预设不能恢复扫描或拍摄时已经丢失的细节。
+在「HDR」页选择「自然」「通透」「柔和」「明亮（保色）」「高光增强」。五个预设关闭创意冲击力与高光淡化，重置 HDR 扩展曲线及 SDR 对比／高光／降饱和参数，并开启 SDR 保色映射。保留已有曝光、白平衡、普通曲线、HSL、胶片设置和局部编辑，可撤销；已有工程不自动重写。
 
-点击「导出 TIFF / HDR…」，在保存窗口的文件类型中选择 **Ultra HDR JPEG - SDR + Gain Map**，保存为 `.jpg`。文件内包含带 ICC 的 sRGB SDR 底图和 ISO 21496-1 多通道增益图；普通 JPEG 查看器可显示底图，支持该增益图标准的 HDR 查看器可显示扩展高光。JPEG 为有损格式，保留 HDR TIFF 作为浮点母版；Windows JXR 仍保留。普通 JPEG 查看器与各 HDR 查看器的外观不保证相同，手机、社交平台和转存流程需实测，转存可能移除增益图。此次编码器输出 ISO 增益图，不附加旧版 XMP 增益图。
-
-HDR JPEG 的 SDR 底图采用同一份调色的 SDR 输出。HDR 调色启用时包含「SDR 高光压缩／SDR 曝光」；关闭时沿用原有 SDR 输出。HDR 用 1.0 = 203 nits 的名义参考白，增益图容量由照片内容峰值确定，不烘焙本机屏幕校准，也不采用编码器默认的 10000 nits 容量。导出转换到 sRGB 原色，范围外颜色会裁切；宽色域和无损保存请用 HDR TIFF。JPEG 导出最大边 8192 像素，最高 10000 nits；超限会提示使用 TIFF 或降低范围，不自动缩图。
-
-编码使用 imagecodecs 2026.10.10 官方 Windows wheel 内嵌的 Google libultrahdr 2.0.2，仅随包提供该编码模块与必需辅助模块。构建清单固定官方 URL 与 SHA256，原始许可保留；没有新增系统安装依赖。使用前仍建议检查「对照 SDR 输出」。真实 HDR 观感和跨设备兼容仍待实机验收。
+保存 HDR 母版时选择 **HDR TIFF - Float32 · 无损压缩 ZIP**。普通预览与 SDR TIFF 使用同一 HDR 主图的 SDR 映射；「SDR 保色映射」通过统一 RGB 增益压缩高光，减少逐通道裁切偏色，不改变 HDR 主图。HDR 名义参考白为 1.0 = 203 nits；本机屏幕校准不写入母版。扫描或拍摄已丢失的信息无法恢复。

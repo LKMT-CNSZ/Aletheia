@@ -5,13 +5,13 @@ No HTTP server, browser, upload, or listening port is started by this module.
 from pathlib import Path
 import copy
 import json
-import time
-import uuid
 import hashlib
 import os
 from contextlib import contextmanager
+from dataclasses import replace
 import numpy as np
 import core
+import hdr_advanced
 import server as engine
 import strip
 import restoration
@@ -20,7 +20,7 @@ import geometry
 from loader import load
 from file_io import io_path,temporary_path
 
-VERSION = '3.1.1'
+VERSION = '3.2.0'
 from preview_cache import PreviewCache
 from document_cache import DocumentCache,BlobCache
 PREVIEWS=PreviewCache()
@@ -66,19 +66,25 @@ def clear_navigation_caches():
 def _initial_analysis():
     return {'info':clone(engine.STATE['info']),'params':clone(engine.STATE['params'].__dict__),
             'preview':engine.STATE['preview'],'layout':clone(engine.STATE['strip_layout']),
-            'input':clone(engine.STATE['native_input'])}
+            'input':clone(engine.STATE['native_input']),'auto_color':engine.STATE.get('auto_color',False)}
 
 def _install_analysis(path,loaded,state):
     layout=state['layout'];full=strip.extract_one(loaded.linear,layout,0)[2] if layout is not None else loaded.linear
     with engine.LOCK:
         engine.FLAT_CACHE.clear();engine.THUMB_CACHE.clear()
         engine.STATE.update(path=path,native_loaded=loaded,native_input=state['input'],frame_params={},roll_params=None,
-            auto_meter=True,strip_img=loaded.linear if layout is not None else None,strip_layout=layout,frame_index=0,
+            auto_meter=True,auto_color=state['auto_color'],strip_img=loaded.linear if layout is not None else None,strip_layout=layout,frame_index=0,
             full=full,preview=state['preview'],params=params(state['params']),info=state['info'])
     return engine.STATE['info']
 
-def open_image(path,identity=None,include_thumbnails=True,input_mode='auto',manual=None,input_color='legacy',working_space='srgb'):
+def default_working_space(path):
+    return 'prophoto' if Path(path).suffix.lower() == '.nef' else 'srgb'
+
+
+def open_image(path,identity=None,include_thumbnails=True,input_mode='auto',manual=None,input_color='legacy',working_space=None,auto_color=True):
     import viewport_render
+    if working_space is None:
+        working_space = default_working_space(path)
     viewport_render.clear_context()
     with preserve_document_on_error():
         identity=identity or source_identity(path)
@@ -92,9 +98,9 @@ def open_image(path,identity=None,include_thumbnails=True,input_mode='auto',manu
         if manual is not None:
             if input_mode!='strip':raise ValueError('手动选框需要整条输入模式')
             manual=strip.normalize_manual(manual,decoded.linear.shape)
-        mode=json.dumps([input_mode,manual],sort_keys=True)
+        mode=json.dumps([input_mode,manual,auto_color],sort_keys=True)
         initial=DOCUMENTS.get_analysis(key,mode)
-        info=clone(_install_analysis(identity['path'],decoded,initial) if initial is not None else engine.install_loaded(identity['path'],decoded,input_mode,manual))
+        info=clone(_install_analysis(identity['path'],decoded,initial) if initial is not None else engine.install_loaded(identity['path'],decoded,input_mode,manual,auto_color=auto_color))
         stat=io_path(identity['path']).stat()
         if (stat.st_size,stat.st_mtime_ns)!=(identity['size'],identity['mtime_ns']):
             raise ValueError('原图在读取过程中发生变化，请稍后重试')
@@ -115,7 +121,7 @@ def thumbnails():
     result=[]
     for index in range(layout.frame_count):
         key=json.dumps([engine.STATE.get('native_source'),engine.STATE.get('native_input'),layout.__dict__,index,
-                        engine.STATE['frame_params'].get(index),engine.STATE['roll_params'],engine.STATE['auto_meter']],sort_keys=True)
+                        engine.STATE['frame_params'].get(index),engine.STATE['roll_params'],engine.STATE['auto_meter'],engine.STATE.get('auto_color')],sort_keys=True)
         value=NAV_THUMBS.get(key)
         if value is None:value=engine.do_thumb(index);NAV_THUMBS.put(key,value)
         else:
@@ -197,6 +203,18 @@ def sample(value,x,y,kind,full=False):
     # Match the geometry of the image actually displayed, including rounding at
     # preview resolution, before sampling the full-resolution source.
     x,y = geometry.source_point(x,y,engine.STATE['full' if full else 'preview'].shape,value)
+    if kind in ('shadow','highlight'):
+        import tone_balance
+        p=engine.prepare_params(params(value))
+        if p.mode!='color_negative':
+            raise ValueError('暗部 / 亮部中性取样用于彩色负片')
+        rgb=core.working_linear(engine.STATE['preview'],p)
+        patch=np.asarray(core.sample_patch(rgb,1-x if p.flip else x,y,5),np.float32)
+        anchor=tone_balance.point(patch,p.working_space)
+        other=p.tone_balance.get('highlight' if kind=='shadow' else 'shadow')
+        if other and (anchor[0]-other[0])*(1 if kind=='highlight' else -1)<.04:
+            raise ValueError('亮部参考必须比暗部参考亮，请换一个灰白区域')
+        return dict(clone(value),tone_balance={**p.tone_balance,kind:anchor})
     result = engine.do_sample(x,y,kind,value)
     return clone(result['params'])
 
@@ -291,6 +309,7 @@ def _restore_edits(data):
     with engine.LOCK:
         engine.STATE.update(frame_params=saved,roll_params=clone(data.get('roll_params')),params=p,
                             auto_meter=data.get('options',{}).get('auto_meter',True),
+                            auto_color=data.get('auto_color',False),
                             default_meter_mode=snapshot_meter_mode(data))
         engine.STATE['info'].update(base=p.base,anchor=p.anchor,span=p.span)
         engine.THUMB_CACHE.clear()
@@ -302,7 +321,7 @@ def restore_layout(snapshot):
         if snapshot['source']['sha256']!=engine.STATE['native_source']['sha256']:
             raise ValueError('切帧备份不属于当前原图')
         spec=normalize_input(snapshot['input'])
-        engine.install_loaded(engine.STATE['path'],engine.STATE['native_loaded'],spec['mode'],spec['manual'])
+        engine.install_loaded(engine.STATE['path'],engine.STATE['native_loaded'],spec['mode'],spec['manual'],auto_color=False)
         _restore_legacy_detection(snapshot)
         return _restore_edits(snapshot)
 
@@ -316,12 +335,38 @@ def _restore_legacy_detection(data):
     if layout_identity()==data.get('layout'):return
     spec=data['input']
     if spec.get('manual') is not None or spec['mode']=='single':return
-    legacy=strip.detect_layout_legacy(engine.STATE['native_loaded'].linear)
-    active=spec['mode']=='strip' or legacy.frame_count>1
-    identity={'boxes':[list(v) for v in strip.frame_boxes(legacy)],'rotation':legacy.rotation} if active else None
-    count=legacy.frame_count if active else 1
-    if identity!=data.get('layout') or count!=data['frame_count']:return
-    engine.install_loaded(engine.STATE['path'],engine.STATE['native_loaded'],spec['mode'],None,legacy_detection=True)
+    loaded = engine.STATE['native_loaded']
+    for detector, legacy in ((strip.detect_layout_previous,False),(strip.detect_layout_legacy,True)):
+        layout = detector(loaded.linear)
+        active = spec['mode']=='strip' or layout.frame_count>1 or layout.kind=='window'
+        identity = {'boxes':[list(v) for v in strip.frame_boxes(layout)],'rotation':layout.rotation} if active else None
+        count = layout.frame_count if active else 1
+        if identity == data.get('layout') and count == data['frame_count']:
+            engine.install_loaded(engine.STATE['path'],loaded,spec['mode'],legacy_detection=legacy,
+                                  auto_color=False,detected_layout=layout)
+            return
+
+
+def _overlapping_frame(old_box,new_box):
+    x0,y0,x1,y1=old_box
+    a0,b0,a1,b1=new_box
+    overlap=max(0,min(x1,a1)-max(x0,a0))*max(0,min(y1,b1)-max(y0,b0))
+    return overlap>=.5*min((x1-x0)*(y1-y0),(a1-a0)*(b1-b0))
+
+
+def _remeasure_negative(arr,p,base,camera):
+    """Measure a complete inversion basis. Leave the user's grade on top."""
+    from tone_balance import fit_import
+
+    anchor,span=core.auto_anchor(arr,base,p.meter_mode)
+    seed=replace(p,base=base,anchor=anchor,span=span,black=None,white=None,
+                 tone_balance={},temp=0.,tint=0.)
+    measured=fit_import(arr,seed,camera)
+    if measured is seed and camera and p.wb_gain==[1.,1.,1.] and not core.base_clipped_channels(base):
+        measured.wb_gain=core.initial_negative_wb(engine.downscale(arr,engine.PREVIEW_MAX),measured)
+    return replace(p,base=measured.base,anchor=measured.anchor,span=measured.span,
+                   black=measured.black,white=measured.white,tone_balance=measured.tone_balance,
+                   wb_gain=p.wb_gain if 'density' in measured.tone_balance else measured.wb_gain)
 
 
 def reframe(spec,value,options=None):
@@ -329,20 +374,39 @@ def reframe(spec,value,options=None):
     spec=normalize_input(spec)
     with preserve_document_on_error():
         before=project_snapshot(value,options)
+        previous_info=engine.STATE['info']
+        previous_initial_wb=previous_info.get('initial_negative_wb')
         old_rows=layout_rows();old_layout=engine.STATE['strip_layout']
         old_rotation=old_layout.rotation if old_layout else 0
         old_map={row['id']:(i,row['box'],row.get('angle',0.)) for i,row in enumerate(old_rows)}
         selected_id=old_rows[engine.STATE['frame_index']]['id']
-        if spec.get('manual') and any(row.get('angle') or row.get('base') for row in spec['manual']['frames']):
+        retained = {}
+        if spec.get('manual') and old_layout is not None:
+            from studio_worker import frame_parameters
+            old_boxes = strip.frame_boxes(old_layout)
             for row in spec['manual']['frames']:
                 prior=old_map.get(row['id'])
-                if prior and prior[1]==row['box'] and 'base' not in row and old_layout is not None:
-                    si=strip.frame_boxes(old_layout)[prior[0]][0];row['base']=list(old_layout.bases[si])
-        engine.install_loaded(engine.STATE['path'],engine.STATE['native_loaded'],spec['mode'],spec['manual'])
+                if prior is None or prior[1] != row['box']:
+                    continue
+                old_index,_,old_angle = prior
+                old_base = old_layout.bases[old_boxes[old_index][0]]
+                row.setdefault('base',list(old_base))
+                if row['base'] != old_base or row.get('angle',0.) != old_angle or spec['manual']['rotation'] != old_rotation:
+                    continue
+                # Resolve default grades while the original gaps still exist.
+                _,preserved = frame_parameters(before,old_index)
+                original = before['frames'].get(str(old_index))
+                preserved.output_space = (original or before['roll_params'] or {}).get('output_space','srgb')
+                retained[row['id']] = preserved.__dict__
+        loaded=engine.STATE['native_loaded']
+        engine.install_loaded(engine.STATE['path'],loaded,spec['mode'],spec['manual'],auto_color=False)
         rows=layout_rows();layout=engine.STATE['strip_layout']
         rotation=layout.rotation if layout else 0
         saved={};changed=0
         for i,row in enumerate(rows):
+            if row['id'] in retained:
+                saved[str(i)] = retained[row['id']]
+                continue
             prior=old_map.get(row['id']);unchanged=bool(prior and prior[1]==row['box'] and prior[2]==row.get('angle',0.) and rotation==old_rotation)
             original=before['frames'].get(str(prior[0])) if prior else None
             seed=original if original is not None else before['roll_params']
@@ -356,9 +420,10 @@ def reframe(spec,value,options=None):
                 base=layout.bases[si]
             else:
                 arr=engine.STATE['full'];base=engine.STATE['params'].base
-            if original is None:
-                p.base,p.anchor=base,None
-                _,p.span=core.auto_anchor(arr,base,p.meter_mode)
+            legacy_auto=(original is not None and not unchanged and prior[0]==before['current_frame']
+                         and p.mode=='color_negative' and previous_initial_wb is not None
+                         and p.wb_gain==previous_initial_wb and p.base==previous_info.get('initial_negative_base')
+                         and p.temp==0 and p.tint==0 and p.flat_mode=='off' and not p.vignette and not p.calibration)
             had_lighting=p.flat_mode!='off' or p.vignette>0
             cleared_lighting=False
             if not unchanged:
@@ -368,11 +433,20 @@ def reframe(spec,value,options=None):
             elif (p.flat_mode=='strip' and (spec['manual'] is not None or layout is None)) or (p.flat_mode=='reference' and layout is not None):
                 p.flat_mode,p.flat_strength,p.flat_field='off',0.,None
                 p.vignette=0.;cleared_lighting=True
-            if cleared_lighting:
-                # A base measured in corrected illumination cannot be reused as
-                # a raw-transmission base after the illumination field is removed.
+            if p.mode=='color_negative' and 'density' in p.tone_balance:
+                same_area=original is not None and _overlapping_frame(prior[1],row['box'])
+                explicit_base='base' in row and row['base']!=p.base
+                # The fitted range and black/white levels share one scale.
+                # A trim of the same frame uses the same complete inversion basis.
+                if not same_area or cleared_lighting or explicit_base:
+                    p=_remeasure_negative(arr,p,base,loaded.is_raw)
+            elif original is None or cleared_lighting:
                 p.base,p.anchor=base,None
                 _,p.span=core.auto_anchor(arr,base,p.meter_mode)
+            elif legacy_auto:
+                p.base=base
+                p.anchor,p.span=core.auto_anchor(arr,base,p.meter_mode)
+                p.wb_gain=core.initial_negative_wb(engine.downscale(arr,engine.PREVIEW_MAX),p)
             saved[str(i)]=p.__dict__
         roll=clone(before['roll_params'])
         if roll is not None:
@@ -382,7 +456,8 @@ def reframe(spec,value,options=None):
         ids=[row['id'] for row in rows]
         index=ids.index(selected_id) if selected_id in ids else min(before['current_frame'],len(rows)-1)
         data={'frame_count':len(rows),'current_frame':index,'frames':saved,'layout':layout_identity(),
-              'roll_params':roll,'options':before['options']}
+              'roll_params':roll,'options':before['options'],
+              'auto_color':bool(layout and any('density' in item['tone_balance'] for item in saved.values()))}
         result=_restore_edits(data)
         result.update(previous=before,changed=changed)
         return result
@@ -390,8 +465,59 @@ def reframe(spec,value,options=None):
 def white_balance(value,method):
     return clone(engine.do_wb({'params':value,'method':method})['params'])
 
+def negative_color(value):
+    """Re-estimate a color negative's cast without resetting the edit."""
+    p=engine.prepare_params(params(value))
+    if p.mode!='color_negative':
+        return clone(value)
+    if 'density' in p.tone_balance:
+        import tone_balance
+        if p.calibration:
+            return clone(value)
+        if p.base is not None and p.flat_mode=='off' and not p.vignette:
+            refitted=_remeasure_negative(engine.STATE['full'],p,p.base,engine.STATE['native_loaded'].is_raw)
+            if 'density' in refitted.tone_balance:
+                return refitted.__dict__
+        rgb=geometry.apply(core.working_linear(engine.STATE['preview'],p),p.__dict__)
+        anchors=tone_balance.estimate(rgb,p.working_space,imported=True)
+        return dict(clone(value),tone_balance={'density':p.tone_balance['density'],**anchors})
+    loaded=engine.STATE['native_loaded']
+    layout=engine.STATE['strip_layout']
+    index=engine.STATE['frame_index']
+    manual=engine.STATE['native_input'].get('manual')
+    explicit_base=manual and 'base' in manual['frames'][index]
+    base=None
+    if not (explicit_base or p.calibration or p.flat_mode!='off' or p.vignette):
+        band=strip.frame_boxes(layout)[index][0] if layout else None
+        if band is not None and layout.gaps[band]:
+            base=layout.bases[band]
+        elif loaded.is_raw:
+            base=strip.film_base_from_edges(loaded.linear)
+    if base is not None and not core.base_clipped_channels(base):
+        p.base=base
+        p.anchor,p.span=core.auto_anchor(engine.STATE['full'],base,p.meter_mode)
+    gain=core.initial_negative_wb(engine.STATE['preview'],p)
+    result=clone(value)
+    result.update(base=clone(p.base),anchor=clone(p.anchor),span=p.span)
+    if gain!=[1.,1.,1.] or base is not None:
+        result['wb_gain']=gain
+    if not p.calibration:
+        import tone_balance
+        p.wb_gain=result.get('wb_gain',p.wb_gain)
+        rgb=geometry.apply(core.working_linear(engine.STATE['preview'],p),p.__dict__)
+        balance=tone_balance.estimate(rgb,p.working_space)
+        if balance or 'tone_balance' in result:
+            result['tone_balance']=balance
+    return result
+
+
 def meter(value):
     return clone(engine.do_flat_meter({'params':value})['params'])
+
+def reset_grade(value):
+    from tone_balance import fit_import
+    p=params(meter(value))
+    return fit_import(engine.STATE['full'],p,engine.STATE['native_loaded'].is_raw).__dict__
 
 def flat_reference(value,path):
     if engine.STATE['strip_layout'] is not None:
@@ -407,7 +533,8 @@ def flat_reference(value,path):
 def calibration_preview(value):
     if value.get('mode')=='bw_negative':raise ValueError('黑白负片不使用彩色色卡校正')
     p=engine.prepare_params(params(value))
-    linear=core.working_linear(engine.STATE['preview'],p)
+    import tone_balance
+    linear=np.clip(tone_balance.apply(core.working_linear(engine.STATE['preview'],p),p),0,1)
     return {'linear':linear,'working_space':p.working_space,'source_sha256':engine.STATE['native_source']['sha256'],
             'frame':engine.STATE['frame_index'],'parameter_signature':calibration_signature(p)}
 
@@ -457,20 +584,33 @@ def export_ultrahdr(path,value,cancel=None):
     return hdr_ultrahdr.write(path,linear,p,cancel,sdr)
 
 
-def export_hdr(path,value,cancel=None):
+def export_hdr(path,value,cancel=None,compression='none',progress=None,jpeg=False):
     import hdr_color,hdr_io
     p=engine.prepare_params(params(value))
     if cancel is not None and cancel.is_set():raise InterruptedError('HDR export canceled')
     linear=hdr_color.render(engine.STATE['full'],p)
-    hdr_io.write(path,linear,p.working_space,'positive',
-        {'source':clone(engine.STATE.get('native_source')),'source_region':source_region(),'recipe':recipe(value),
-         'sdr_rolloff_bypassed':True},cancel)
-    return str(path)
+    if not jpeg:
+        hdr_io.write(path,linear,p.working_space,'positive',{'sdr_rolloff_bypassed':True},
+                     cancel,compression=compression,progress=progress)
+        return str(path)
+    dest=Path(path)
+    temp,companion=temporary_path(dest),temporary_path(dest)
+    try:
+        io_path(dest.parent).mkdir(parents=True,exist_ok=True)
+        wide=core.process(engine.STATE['full'],p,p.working_space)
+        engine.write_jpeg(companion,wide,p.working_space)
+        hdr_io.write(temp,linear,p.working_space,'positive',{'sdr_rolloff_bypassed':True},
+                     cancel,compression=compression,progress=progress)
+        return str(publish_image(temp,dest,True,companion))
+    finally:
+        temp.unlink(missing_ok=True)
+        companion.unlink(missing_ok=True)
 
 def fit_calibration(value,reference,points,name):
     if value.get('mode')=='bw_negative':raise ValueError('黑白负片不使用彩色色卡校正')
     p=engine.prepare_params(params(value))
-    linear=core.working_linear(engine.STATE['full'],p)
+    import tone_balance
+    linear=np.clip(tone_balance.apply(core.working_linear(engine.STATE['full'],p),p),0,1)
     samples,clipped=calibration.sample_blocks(linear,points)
     result=calibration.fit(reference,samples,clipped,points,name,p.working_space)
     result.update(source_sha256=engine.STATE['native_source']['sha256'],frame=engine.STATE['frame_index'],
@@ -491,10 +631,11 @@ def modern_tone(value):
     return p.scene_hdr or p.meter_mode!='legacy' or tone_mapping.active(p)
 
 def recipe(value,source=None,index=None):
-    return {'format':'film-invert-recipe','version':7 if params(value).hdr_enabled else 6 if modern_tone(value) else 5 if params(value).perspective is not None else (4 if input_geometry(engine.STATE.get('native_input',{})) else (3 if params(value).local_edits else (2 if params(value).working_space=='prophoto' else 1))),'application':VERSION,
+    p=params(value)
+    return {'format':'film-invert-recipe','version':12 if 'density' in p.tone_balance else 11 if p.tone_balance else 10 if hdr_advanced.color_safe_active(p) else 9 if hdr_advanced.impact_active(p) else 8 if hdr_advanced.active(p) else 7 if p.hdr_enabled else 6 if modern_tone(value) else 5 if p.perspective is not None else (4 if input_geometry(engine.STATE.get('native_input',{})) else (3 if p.local_edits else (2 if p.working_space=='prophoto' else 1))),'application':VERSION,
             'source':source or engine.STATE['path'],
             'frame':index if index is not None else engine.STATE['frame_index']+1,
-            'params':params(value).__dict__,
+            'params':p.__dict__,
             'input_mode':engine.STATE.get('native_input',{}).get('mode','auto'),
             'input_color':engine.STATE.get('native_input',{}).get('color','legacy'),
             'working_space':engine.STATE.get('native_input',{}).get('working_space','srgb'),
@@ -502,7 +643,7 @@ def recipe(value,source=None,index=None):
             'source_region':source_region(None if index is None else index-1)}
 
 def recipe_params(data):
-    if not isinstance(data,dict) or data.get('format')!='film-invert-recipe' or data.get('version') not in (1,2,3,4,5,6,7):
+    if not isinstance(data,dict) or data.get('format')!='film-invert-recipe' or data.get('version') not in range(1,13):
         raise ValueError('不支持的配方格式')
     if (data['version'] in (4,5) or data['version']>=6 and (data.get('source_region') or {}).get('angle')) and data.get('source_region')!=source_region():raise ValueError('配方的输入片框校直不同，请先打开匹配工程')
     if not isinstance(data.get('params'),dict):raise ValueError('配方参数无效')
@@ -510,6 +651,11 @@ def recipe_params(data):
     if data['version']<5 and data['params'].get('perspective') is not None:raise ValueError('透视校正需要配方版本 5')
     if data['version']<6 and modern_tone(data['params']):raise ValueError('新影调参数需要配方版本 6')
     if data['version']<7 and params(data['params']).hdr_enabled:raise ValueError('HDR grading requires recipe version 7')
+    if data['version']<8 and hdr_advanced.active(params(data['params'])):raise ValueError('扩展 HDR 调色需要配方版本 8')
+    if data['version']<9 and hdr_advanced.impact_active(params(data['params'])):raise ValueError('强烈 HDR 调色需要配方版本 9')
+    if data['version']<10 and hdr_advanced.color_safe_active(params(data['params'])):raise ValueError('SDR 保色映射需要配方版本 10')
+    if data['version']<11 and params(data['params']).tone_balance:raise ValueError('分区校色需要配方版本 11')
+    if data['version']<12 and 'density' in params(data['params']).tone_balance:raise ValueError('导入校色需要配方版本 12')
     return params(data['params']).__dict__
 
 
@@ -542,7 +688,10 @@ def project_snapshot(value,options=None):
         if any(v.get('perspective') is not None for v in [*saved.values(),engine.STATE.get('roll_params') or {}]):version=7
         if any(modern_tone(v) for v in [*saved.values(),engine.STATE.get('roll_params') or {}]):version=8
         if any(params(v).hdr_enabled for v in [*saved.values(),engine.STATE.get('roll_params') or {}]):version=9
-        return {'format':'film-invert-project','version':version,'application':VERSION,
+        if any(hdr_advanced.active(params(v)) for v in [*saved.values(),engine.STATE.get('roll_params') or {}]):version=10
+        if any(hdr_advanced.impact_active(params(v)) for v in [*saved.values(),engine.STATE.get('roll_params') or {}]):version=11
+        if any(hdr_advanced.color_safe_active(params(v)) for v in [*saved.values(),engine.STATE.get('roll_params') or {}]):version=12
+        result={'format':'film-invert-project','version':version,'application':VERSION,
                 'input':input_spec,
                 'source':clone(engine.STATE['native_source']),
                 'frame_count':count,'current_frame':index,
@@ -551,6 +700,17 @@ def project_snapshot(value,options=None):
                 'roll_params':clone(engine.STATE['roll_params']),
                 'options':{'keep_params':bool((options or {}).get('keep_params',True)),
                            'auto_meter':bool((options or {}).get('auto_meter',True))}}
+        if engine.STATE.get('auto_color') and engine.STATE['strip_layout'] is not None:result['auto_color']=True
+        return update_color_version(result)
+
+
+def update_color_version(snapshot):
+    balances=[params(v).tone_balance for v in [*snapshot['frames'].values(),snapshot.get('roll_params') or {}]]
+    if snapshot.get('auto_color') or any('density' in v for v in balances):
+        snapshot['version']=max(snapshot['version'],14)
+    elif any(balances):
+        snapshot['version']=max(snapshot['version'],13)
+    return snapshot
 
 def save_project(path,value,options=None):
     data=project_snapshot(value,options)
@@ -561,16 +721,25 @@ def save_project(path,value,options=None):
 
 def project_signature(data):
     logical={key:data.get(key) for key in ('frame_count','current_frame','layout','frames','roll_params','options')}
+    logical['frames']={key:signature_params(value) for key,value in logical['frames'].items()}
+    logical['roll_params']=signature_params(logical['roll_params'])
+    if data.get('auto_color'):logical['auto_color']=True
     input_spec=data.get('input',{'mode':'auto','manual':None})
     if input_spec!={'mode':'auto','manual':None}:logical['input']=input_spec
     logical['source_sha256']=data['source']['sha256']
     return hashlib.sha256(json.dumps(logical,sort_keys=True,allow_nan=False).encode('utf-8')).hexdigest()
 
+
+def signature_params(value):
+    if value is None or value.get('tone_balance'):
+        return value
+    return {key:item for key,item in value.items() if key!='tone_balance'}
+
 def read_project(path):
     path=io_path(path)
     if path.stat().st_size>32*1024*1024:raise ValueError('工程文件超过 32 MB')
     data=json.loads(path.read_text('utf-8'))
-    if not isinstance(data,dict) or data.get('format')!='film-invert-project' or data.get('version') not in (1,2,3,4,5,6,7,8,9):
+    if not isinstance(data,dict) or data.get('format')!='film-invert-project' or data.get('version') not in range(1,15):
         raise ValueError('不支持的工程格式或版本')
     data['input']=normalize_input(data.get('input',{'mode':'auto','manual':None}))
     if input_geometry(data['input']) and data['version']<6:raise ValueError('输入片框校直需要工程版本 6')
@@ -595,6 +764,12 @@ def read_project(path):
         raise ValueError('透视校正需要工程版本 7')
     if data['version']<8 and any(modern_tone(v) for v in [*frames.values(),data.get('roll_params') or {}]):raise ValueError('新影调参数需要工程版本 8')
     if data['version']<9 and any(params(v).hdr_enabled for v in [*frames.values(),data.get('roll_params') or {}]):raise ValueError('HDR grading requires project version 9')
+    if data['version']<10 and any(hdr_advanced.active(params(v)) for v in [*frames.values(),data.get('roll_params') or {}]):raise ValueError('扩展 HDR 调色需要工程版本 10')
+    if data['version']<11 and any(hdr_advanced.impact_active(params(v)) for v in [*frames.values(),data.get('roll_params') or {}]):raise ValueError('强烈 HDR 调色需要工程版本 11')
+    if data['version']<12 and any(hdr_advanced.color_safe_active(params(v)) for v in [*frames.values(),data.get('roll_params') or {}]):raise ValueError('SDR 保色映射需要工程版本 12')
+    if data['version']<13 and any(params(v).tone_balance for v in [*frames.values(),data.get('roll_params') or {}]):raise ValueError('分区校色需要工程版本 13')
+    if 'auto_color' in data and type(data['auto_color']) is not bool:raise ValueError('导入校色设置无效')
+    if data['version']<14 and (data.get('auto_color') or any('density' in params(v).tone_balance for v in [*frames.values(),data.get('roll_params') or {}])):raise ValueError('导入校色需要工程版本 14')
     for key,value in frames.items():
         if not isinstance(key,str) or not key.isdecimal() or str(int(key))!=key or not 0<=int(key)<count or not isinstance(value,dict):
             raise ValueError('工程帧参数无效')
@@ -626,7 +801,7 @@ def open_project(path,replacement=None):
         if any(identity[key]!=data['source'][key] for key in ('size','sha256')):
             raise ValueError('所选原图与工程记录不一致，已保留当前编辑；请定位原始文件')
         spec=data['input']
-        result=open_image(source,identity,include_thumbnails=False,input_mode=spec['mode'],manual=spec['manual'],input_color=spec.get('color','legacy'),working_space=spec.get('working_space','srgb'))
+        result=open_image(source,identity,include_thumbnails=False,input_mode=spec['mode'],manual=spec['manual'],input_color=spec.get('color','legacy'),working_space=spec.get('working_space','srgb'),auto_color=False)
         _restore_legacy_detection(data)
         result['info']=clone(engine.STATE['info'])
         count=result['info']['strip']['frames'] if result['info']['strip'] else 1
@@ -638,7 +813,32 @@ def open_project(path,replacement=None):
                       saved_signature=project_signature(data))
         return result
 
-def export_image(destination,value,array=None,source=None,index=None):
+def publish_image(temp,dest,unique,companion=None):
+    from export_policy import available_name
+    from file_io import publish_new
+    if not unique:
+        temp.replace(io_path(dest))
+        return dest
+    while True:
+        name=available_name(dest.parent,dest.name,jpeg=companion is not None)
+        target=dest.parent/name
+        tiff=io_path(target)
+        try:
+            publish_new(temp,tiff)
+        except FileExistsError:
+            continue
+        if companion is not None:
+            try:
+                publish_new(companion,tiff.with_suffix('.jpg'))
+            except OSError as error:
+                # Restore our own TIFF stage if the JPEG could not be published.
+                tiff.rename(temp)
+                if isinstance(error,FileExistsError):continue
+                raise
+        return target
+
+
+def export_image(destination,value,array=None,compression='deflate',progress=None,unique=False,jpeg=False,staged_jpeg=None):
     p = engine.prepare_params(params(value)) if array is None else params(value)
     lin = engine.STATE['full'] if array is None else array
     if lin is None:
@@ -646,13 +846,13 @@ def export_image(destination,value,array=None,source=None,index=None):
     dest = Path(destination)
     io_path(dest.parent).mkdir(parents=True,exist_ok=True)
     temp = temporary_path(dest)
+    companion = temporary_path(dest) if jpeg else None
     try:
-        diagnostics=engine.export_pixels(str(temp),lin,p)
-        temp.replace(io_path(dest))
-        record=recipe(p.__dict__,source,index);record['output_diagnostics']=diagnostics
-        write_json(str(dest)+'.json',record)
+        engine.export_pixels(str(temp),lin,p,compression=compression,progress=progress,jpeg=companion or staged_jpeg)
+        dest=publish_image(temp,dest,unique or jpeg,companion)
     finally:
         temp.unlink(missing_ok=True)
+        if companion is not None:companion.unlink(missing_ok=True)
     return str(dest)
 
 def export_roll(folder,value,meter_each,cancel,progress,export_options=None):
@@ -662,12 +862,12 @@ def export_roll(folder,value,meter_each,cancel,progress,export_options=None):
     saved = clone(engine.STATE['frame_params'])
     saved[engine.STATE['frame_index']] = clone(value)
     roll = clone(engine.STATE['roll_params'])
-    stem = Path(source).stem
-    from export_policy import names
+    from export_policy import clean,names
+    stem = clean(Path(source).stem)
     filenames=names(source,list(range(layout.frame_count)),export_options,lambda i:f'{stem}-f{i+1:02d}-positive.tif')
-    dest = Path(folder)/(stem+'-roll-'+time.strftime('%Y%m%d-%H%M%S')+'-'+uuid.uuid4().hex[:4])
-    io_path(dest).mkdir(parents=True,exist_ok=False)
-    manifest = []
+    dest = Path(folder)
+    frames = []
+    progress(0,layout.frame_count,'')
     for i in range(layout.frame_count):
         if cancel.is_set():
             break
@@ -677,22 +877,21 @@ def export_roll(folder,value,meter_each,cancel,progress,export_options=None):
         else:
             p = params(roll or {'meter_mode':engine.STATE.get('default_meter_mode','legacy')})
             p.base,p.anchor = layout.bases[si],None
-            if meter_each or roll is None:
+            if (meter_each or roll is None) and 'density' not in p.tone_balance:
                 _,p.span = core.auto_anchor(arr,p.base,p.meter_mode)
         p = engine.prepare_params(p,img,layout,i)
         if i not in saved and p.flat_mode == 'strip':
             p.base = engine.strip_field(img,layout,i)[1]
-            if meter_each:
+            if meter_each and 'density' not in p.tone_balance:
                 _,p.span = core.auto_anchor(engine.corrected_input(arr,p),p.base,p.meter_mode)
+        if i not in saved and roll is None:
+            p = engine.initial_frame_color(arr,p)
         p.output_space = value.get('output_space','srgb')
-        path = dest/filenames[i]
-        export_image(path,p.__dict__,arr,source,i+1)
-        manifest.append({'frame':i+1,'file':path.name,'params':p.__dict__,'source_region':source_region(i)})
-        write_json(dest/'manifest.json',manifest)
+        path = Path(export_image(dest/filenames[i],p.__dict__,arr,unique=True,jpeg=bool((export_options or {}).get('jpeg'))))
+        frames.append({'frame':i+1,'file':path.name,'params':p.__dict__,'source_region':source_region(i)})
         progress(i+1,layout.frame_count,str(path))
-    cancelled = cancel.is_set() and len(manifest) < layout.frame_count
-    write_json(dest/'task.json',{'cancelled':cancelled,'completed':len(manifest),'total':layout.frame_count})
-    return {'folder':str(dest),'completed':len(manifest),'total':layout.frame_count,'cancelled':cancelled}
+    cancelled = cancel.is_set() and len(frames) < layout.frame_count
+    return {'folder':str(dest),'completed':len(frames),'total':layout.frame_count,'cancelled':cancelled,'frames':frames}
 
 
 def local_preview(value):

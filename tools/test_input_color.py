@@ -90,9 +90,9 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build'/'tests',prefix='input-color-')
     job=store.enqueue([identifier],folder/'exports',False)[0]
     expected=(core.process(model.engine.STATE['full'],model.params(window.p))*65535+.5).astype(np.uint16)
     assert studio_worker.execute(store,job)=='completed'
-    output=Path(store.get_job(job)['destination'])/'frame-0001.tif'
+    output=Path(store.get_job(job)['destination'])/store.get_job(job)['outputs']['0']['tiff']['name']
     assert np.array_equal(read_tiff(str(output)),expected)
-    recipe=json.loads(Path(str(output)+'.json').read_text('utf-8'))
+    recipe=model.recipe(window.p)
     assert recipe['input_color']=='auto' and recipe['input_color_report']['icc_sha256']
     # Actual reinterpret command backs up the old document before resetting edits.
     choose=ui.QInputDialog.getItem;question=ui.QMessageBox.question

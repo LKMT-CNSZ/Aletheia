@@ -94,7 +94,7 @@ def strip_rows(width):
     return max(1,min(128,2*1024*1024//max(1,width*12)))
 
 
-def write_tiff_strips(path,shape,strips,with_icc=True,compress='deflate',predictor=True,icc_profile=None,rows=None):
+def write_tiff_strips(path,shape,strips,with_icc=True,compress='deflate',predictor=True,icc_profile=None,rows=None,progress=None):
     """strips yields contiguous (first_row, encoded float RGB) with declared rows."""
     h,w=map(int,shape);rows=rows or strip_rows(w)
     if h<1 or w<1 or rows<1 or h*w*6>=0xFFFFFFFF-4*1024*1024:raise ValueError('输出超过经典 TIFF 大小范围；BigTIFF 尚未实现')
@@ -115,6 +115,7 @@ def write_tiff_strips(path,shape,strips,with_icc=True,compress='deflate',predict
                 d=data.astype(np.int32);d[:,1:]=d[:,1:]-d[:,:-1];data=(d&65535).astype('<u2')
             raw=data.tobytes();blob=zlib.compress(raw,6) if comp==COMP_DEFLATE else (_lzw_encode(raw) if comp==COMP_LZW else raw)
             offsets.append(fh.tell());counts.append(len(blob));fh.write(blob);next_row+=len(block)
+            if progress is not None:progress(next_row,h)
         if next_row!=h:raise ValueError('TIFF 条带不完整')
         if fh.tell()%2:fh.write(b'\0')
         ifd_off=fh.tell()

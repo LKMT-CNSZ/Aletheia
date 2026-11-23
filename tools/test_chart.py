@@ -75,7 +75,7 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build'/'tests',prefix='chart-') as fo
     dest=folder/'校正.tif';window.export_to(str(dest));idle()
     expected=(core.process(model.engine.STATE['full'],model.params(window.p))*65535+.5).astype(np.uint16)
     assert np.array_equal(read_tiff(str(dest)),expected)
-    recipe=json.loads(Path(str(dest)+'.json').read_text('utf-8'));assert recipe['params']['calibration']['matrix']==window.p['calibration']['matrix']
+    assert not Path(str(dest)+'.json').exists()
     project=folder/'校正.filmproj';window.save_project_to(str(project));idle();saved=read_tiff(str(dest)).copy()
     window.clear_calibration();idle();window.open_project_path(str(project));idle()
     window.export_to(str(dest));idle();assert np.array_equal(saved,read_tiff(str(dest)))
@@ -84,11 +84,12 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build'/'tests',prefix='chart-') as fo
     assert model.params(legacy).calibration is None
     window.open_path(str(ROOT/'samples'/'pro-strip-demo.tif'));idle()
     window.apply_calibration(profile);idle();window.apply_roll();idle()
-    window.go_frame(3);idle();window.batch_to(str(folder));idle()
-    manifest=json.loads((Path(window.last_export)/'manifest.json').read_text('utf-8'))
+    window.go_frame(3);idle()
+    result=model.export_roll(folder,window.p,False,__import__('threading').Event(),lambda *args:None,window.export_options())
+    manifest=result['frames']
     assert len(manifest)==6 and all(row['params']['calibration']['matrix']==profile['matrix'] for row in manifest)
     si,fi,arr=model.strip.extract_one(model.engine.STATE['strip_img'],model.engine.STATE['strip_layout'],0)
     expected=(core.process(arr,model.params(manifest[0]['params']))*65535+.5).astype(np.uint16)
-    assert np.array_equal(read_tiff(str(Path(window.last_export)/manifest[0]['file'])),expected)
+    assert np.array_equal(read_tiff(str(Path(result['folder'])/manifest[0]['file'])),expected)
     window.close();app.processEvents()
 print('PASS chart: known matrix recovery, held-out improvement, invalid sampling rejection, flip, native grid/fit/compare/apply/history, exact ICC TIFF + recipe/project recovery, default compatibility')

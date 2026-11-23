@@ -200,30 +200,7 @@ class ImageCanvas(QGraphicsView):
             self.pathsDropped.emit(paths);event.acceptProposedAction()
         else:event.ignore()
 
-class Histogram(QWidget):
-    def __init__(self):
-        super().__init__();self.bins=None;self.setMinimumHeight(116);self.setMaximumHeight(140)
-        _ui(self.setAccessibleName, _t('RGB 对数直方图'))
-    def set_bins(self,bins):self.bins=bins;self.update()
-    def paintEvent(self,event):
-        p=QPainter(self);p.fillRect(self.rect(),QColor('#161616'));p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        box=QRectF(9,9,self.width()-18,self.height()-32)
-        p.setPen(QPen(QColor('#363636'),1))
-        for i in range(5):
-            x=box.left()+box.width()*i/4;p.drawLine(QPointF(x,box.top()),QPointF(x,box.bottom()))
-        if self.bins is None:
-            p.setPen(QColor('#a8a8a8'));_ui(p.drawText, self.rect(),Qt.AlignmentFlag.AlignCenter,_t('打开图像后显示 RGB 直方图'));return
-        peak=max(1,max(float(np.log1p(b).max()) for b in self.bins))
-        for bins,color in zip(self.bins,('#e27878','#78bd90','#7ba4db')):
-            path=QPainterPath()
-            for i,v in enumerate(bins):
-                point=QPointF(box.left()+i/255*box.width(),box.bottom()-float(np.log1p(v))/peak*box.height())
-                path.moveTo(point) if i==0 else path.lineTo(point)
-            p.setPen(QPen(QColor(color),1.2));p.drawPath(path)
-        p.setPen(QColor('#a8a8a8'));labels=QRectF(9,self.height()-24,self.width()-18,18)
-        _ui(p.drawText, labels,Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter,'0')
-        _ui(p.drawText, labels,Qt.AlignmentFlag.AlignCenter,_t('RGB · 对数纵轴'))
-        _ui(p.drawText, labels,Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter,'255')
+from native_histogram import Histogram
 
 class CurveEditor(QWidget):
     changed=Signal(object);committed=Signal()

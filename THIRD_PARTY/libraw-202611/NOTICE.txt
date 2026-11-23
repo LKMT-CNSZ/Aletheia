@@ -1,0 +1,14 @@
+FilmInvert Native Nikon High Efficiency NEF support
+
+LibRaw 0.23.0-Snapshot202611, commit a9a14b1970d188c25dade81f8326ff00a6e33649
+Copyright 2008-2026 LibRaw LLC
+https://github.com/LibRaw/LibRaw/commit/a9a14b1970d188c25dade81f8326ff00a6e33649
+
+This portable build uses LibRaw under LGPL 2.1. The corresponding unmodified
+upstream source archive, copyright and license are supplied in this directory.
+LibRaw is linked dynamically and the DLL can be replaced with an ABI-compatible
+build. The FilmInvert bridge source is in app/raw_support/nikon_he.cpp.
+To rebuild both DLLs, run build_nikon_he.py from an x64 MSVC developer prompt
+with Python 3.13+ available. The build uses the OpenMP runtime already bundled
+with rawpy. FilmInvert uses this snapshot for Nikon HE/HE* decoding after the
+bundled rawpy decoder reports an unsupported NEF.

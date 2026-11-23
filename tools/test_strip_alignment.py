@@ -49,10 +49,10 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build/tests',prefix='alignment-') as 
     # Frozen queue includes the input angle and correct source region in v4 recipe.
     store=StudioStore(folder/'profile');asset=store.capture(model.project_snapshot(p));job=store.enqueue([asset],folder/'output')[0]
     assert studio_worker.execute(store,job)=='completed'
-    output=Path(store.get_job(job)['destination'])/'frame-0001.tif'
+    output=Path(store.get_job(job)['destination'])/store.get_job(job)['outputs']['0']['tiff']['name']
     reference=model.core.process(model.engine.STATE['full'],model.params(p))
     assert np.array_equal(read_tiff(output),(np.clip(reference,0,1)*65535+.5).astype(np.uint16))
-    recipe=json.loads(Path(str(output)+'.json').read_text('utf-8'))
+    recipe=model.recipe(p)
     assert recipe['version']==6 and recipe['source_region']['angle']==candidate['angle']
     project_transfer.pack(model.project_snapshot(p),folder/'aligned.filmtransfer')
     moved=project_transfer.unpack(folder/'aligned.filmtransfer',folder/'moved')
@@ -158,11 +158,13 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build/tests',prefix='alignment-') as 
     snapshot=model.project_snapshot(p);multi_store=StudioStore(folder/'multi-profile')
     asset=multi_store.capture(snapshot);job=multi_store.enqueue([asset],folder/'multi-output')[0]
     assert studio_worker.execute(multi_store,job)=='completed'
-    destination=Path(multi_store.get_job(job)['destination'])
+    finished=multi_store.get_job(job)
+    destination=Path(finished['destination'])
     for i in range(3):
         array,fp=studio_worker.frame_parameters(snapshot,i)
         expected=(np.clip(model.core.process(array,fp),0,1)*65535+.5).astype(np.uint16)
-        assert np.array_equal(read_tiff(destination/f'frame-{i+1:04d}.tif'),expected)
+        output_name=finished['outputs'][str(i)]['tiff']['name']
+        assert np.array_equal(read_tiff(destination/output_name),expected)
     # Cancel after reference edits must not alter the actual loaded project.
     before=model.project_signature(model.project_snapshot(p))
     cancelled=FrameLayoutDialog(model.layout_editor());cancelled.line_button.setChecked(True)

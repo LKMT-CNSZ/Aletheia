@@ -36,9 +36,9 @@ class HDRHistogram(QWidget):
                 point=QPointF(box.left()+i/(len(self.bins)-1)*box.width(),box.bottom()-np.log1p(n)/peak*box.height())
                 path.moveTo(point) if i==0 else path.lineTo(point)
             p.setPen(QPen(QColor('#dedede'),1.3));p.drawPath(path)
-        for value,label in ((-8,'−8'),(0,'SDR 0'),(6,'+6 EV')):
+        for value,label in ((-8,'−8'),(0,'W'),(1,'+1'),(2,'+2'),(3,'+3'),(4,'+4'),(6,'+6')):
             x=box.left()+(value+8)/14*box.width();p.setPen(QColor('#8b9aa9'));p.drawLine(QPointF(x,box.top()),QPointF(x,box.bottom()))
-            p.drawText(QRectF(min(max(0,x-18),self.width()-52),box.bottom()+2,54,17),label)
+            p.drawText(QRectF(min(max(0,x-10),self.width()-26),box.bottom()+2,26,17),label)
         p.setPen(QColor('#bcbcbc'))
         text=_tf('屏幕余量 +{0:.1f} EV · 超范围 {1:.1f}%',self.ceiling,self.beyond*100) if self.bins is not None else _t('打开图像后显示 HDR 范围')
         _ui(p.drawText,QRectF(10,self.height()-22,self.width()-20,20),Qt.AlignmentFlag.AlignLeft,text)

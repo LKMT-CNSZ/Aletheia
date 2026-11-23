@@ -29,6 +29,10 @@ def fetch(proxy='http://127.0.0.1:7897'):
         records.append({'package':name,'version':version,'filename':file['filename'],
                         'url':file['url'],'sha256':file['digests']['sha256'],
                         'provenance':f'https://pypi.org/pypi/{name}/{version}/json'})
+    fetch_archives(records, cache, opener)
+    (ROOT/'build'/'compat-dependencies.json').write_text(json.dumps(records,indent=2),encoding='utf-8')
+
+def fetch_archives(records, cache, opener):
     for record in records:
         dest=cache/record['filename']
         if not dest.exists() or hashlib.file_digest(dest.open('rb'),'sha256').hexdigest()!=record['sha256']:
@@ -39,8 +43,17 @@ def fetch(proxy='http://127.0.0.1:7897'):
                 raise RuntimeError('Official download hash mismatch: '+dest.name)
             partial.replace(dest)
         print(record['package'],record['version'],dest.stat().st_size,'SHA256 verified',flush=True)
-    (ROOT/'build'/'compat-dependencies.json').write_text(json.dumps(records,indent=2),encoding='utf-8')
+
+def fetch_locked(proxy):
+    handler = urllib.request.ProxyHandler({'http': proxy, 'https': proxy}) if proxy else urllib.request.ProxyHandler()
+    cache = ROOT / 'build/wheels'
+    cache.mkdir(parents=True, exist_ok=True)
+    records = json.loads((ROOT / 'build/compat-dependencies.json').read_text('utf-8'))
+    fetch_archives(records, cache, urllib.request.build_opener(handler))
+
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('--proxy',default='http://127.0.0.1:7897')
-    fetch(parser.parse_args().proxy)
+    parser.add_argument('--locked', action='store_true', help='Download and verify the committed dependency versions')
+    args = parser.parse_args()
+    (fetch_locked if args.locked else fetch)(args.proxy)

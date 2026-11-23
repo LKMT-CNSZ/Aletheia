@@ -1,4 +1,7 @@
 ﻿#define AppVersion Trim(FileRead(FileOpen(AddBackslash(SourcePath) + "..\VERSION.txt")))
+#ifndef ProductName
+  #define ProductName "FilmInvert Native"
+#endif
 #ifndef ProductAppId
   #define ProductAppId "FilmInvertNative.Stable." + AppVersion
 #endif
@@ -16,13 +19,15 @@
 #endif
 [Setup]
 AppId={#ProductAppId}
-AppName=FilmInvert Native
+AppName={#ProductName}
 AppVersion={#AppVersion}
-AppVerName=FilmInvert Native {#AppVersion}
+AppVerName={#ProductName} {#AppVersion}
 VersionInfoVersion={#AppFileVersion}
-VersionInfoDescription=FilmInvert Native Windows x64 Setup
-DefaultDirName={localappdata}\Programs\FilmInvert Native\{#AppVersion}
-DefaultGroupName=FilmInvert Native {#AppVersion}
+VersionInfoDescription={#ProductName} Windows x64 Setup
+VersionInfoProductName={#ProductName}
+VersionInfoTextVersion={#AppVersion}
+DefaultDirName={localappdata}\Programs\{#ProductName}\{#AppVersion}
+DefaultGroupName={#ProductName} {#AppVersion}
 UsePreviousAppDir=no
 UsePreviousGroup=no
 UsePreviousTasks=no
@@ -64,29 +69,29 @@ chinesesimplified.RemoveOld=新版本安装验证成功后移除已登记旧版�
 english.CreateDesktop=Create a desktop shortcut
 english.Shortcuts=Shortcuts:
 english.UserGuide=User guide
-english.UninstallProgram=Uninstall FilmInvert Native
-english.LaunchProgram=Launch FilmInvert Native
+english.UninstallProgram=Uninstall {#ProductName}
+english.LaunchProgram=Launch {#ProductName}
 english.EmptyDirectory=Choose an empty folder. Existing installations and user files are retained. Back up your data and install into a new version folder.
 chinesesimplified.CreateDesktop=创建桌面快捷方式
 chinesesimplified.Shortcuts=快捷方式：
 chinesesimplified.UserGuide=软件介绍
-chinesesimplified.UninstallProgram=卸载 FilmInvert Native
-chinesesimplified.LaunchProgram=启动 FilmInvert Native
+chinesesimplified.UninstallProgram=卸载 {#ProductName}
+chinesesimplified.LaunchProgram=启动 {#ProductName}
 chinesesimplified.EmptyDirectory=请选择空目录。为保留旧安装及用户文件，请备份数据后安装到新的版本目录。
 [Files]
 Source: "installer-assets\*.bmp"; Flags: dontcopy
 #include "stable-files.iss"
 Source: "installed-layout.json"; DestDir: "{app}"; Flags: ignoreversion
 [Icons]
-Name: "{group}\FilmInvert Native {#AppVersion}"; Filename: "{app}\runtime\pythonw.exe"; Parameters: "-I -m film_invert_launcher"; WorkingDir: "{app}"; IconFilename: "{app}\app\assets\filminvert-native-856209a72631.ico"; Tasks: startmenu
+Name: "{group}\{#ProductName} {#AppVersion}"; Filename: "{app}\runtime\pythonw.exe"; Parameters: "-I -m film_invert_launcher"; WorkingDir: "{app}"; IconFilename: "{app}\app\assets\filminvert-native-856209a72631.ico"; Tasks: startmenu
 Name: "{group}\{cm:UserGuide}"; Filename: "{app}\软件介绍.html"; Languages: chinesesimplified; Tasks: startmenu
 Name: "{group}\{cm:UserGuide}"; Filename: "{app}\README.en.html"; Languages: english; Tasks: startmenu
 Name: "{group}\{cm:UninstallProgram} {#AppVersion}"; Filename: "{uninstallexe}"; Tasks: startmenu
-Name: "{autodesktop}\FilmInvert Native {#AppVersion}"; Filename: "{app}\runtime\pythonw.exe"; Parameters: "-I -m film_invert_launcher"; WorkingDir: "{app}"; IconFilename: "{app}\app\assets\filminvert-native-856209a72631.ico"; Tasks: desktopicon
+Name: "{autodesktop}\{#ProductName} {#AppVersion}"; Filename: "{app}\runtime\pythonw.exe"; Parameters: "-I -m film_invert_launcher"; WorkingDir: "{app}"; IconFilename: "{app}\app\assets\filminvert-native-856209a72631.ico"; Tasks: desktopicon
 [Run]
 Filename: "{app}\runtime\pythonw.exe"; Parameters: "-I -m film_invert_launcher"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram}"; Flags: nowait postinstall skipifsilent; Check: IsVerified
 [UninstallDelete]
-Type: files; Name: "{autodesktop}\FilmInvert Native {#AppVersion}.lnk"
+Type: files; Name: "{autodesktop}\{#ProductName} {#AppVersion}.lnk"
 [Code]
 #include "installer-ui.iss"
 function NextButtonClick(CurPageID: Integer): Boolean;
