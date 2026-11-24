@@ -7,8 +7,8 @@ from PySide6.QtGui import QPixmap,QDesktopServices
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QGridLayout,QFormLayout,QLabel,QPushButton,
  QLineEdit,QComboBox,QCheckBox,QDoubleSpinBox,QTableWidget,QTableWidgetItem,QAbstractItemView,
  QFileDialog,QTabWidget,QWidget,QInputDialog,QMessageBox,QScrollArea,QProgressBar)
-from batch_store import BatchStore,FIELDS
-from native_widgets import monitor_image,photo_icon
+from batch_store import BatchStore,FIELDS,settings
+from native_widgets import monitor_image,photo_icon,format_combo,PHOTO_FORMAT_LABELS,CONTACT_FORMAT_LABELS
 from native_efficiency import PhotoFilters,EditingKeys,catalog,phase,job_states
 
 STAGE={'imported':_t('待检查'),'checked':_t('已检查'),'prepared':_t('已准备'),'styled':_t('待人工复核'),'reviewed':_t('已复核'),'queued':_t('已入队'),'failed':_t('失败')}
@@ -159,10 +159,14 @@ class BatchDialog(QDialog):
         line=QHBoxLayout()
         for text,fn in [(_t('4 图校样'),lambda:self.proof(4)),(_t('9 图校样'),lambda:self.proof(9)),(_t('刷新选中校样'),lambda:self.run('preview')),(_t('标记选中已复核'),self.review)]:self.add_button(line,text,fn)
         layout.addLayout(line);form=QFormLayout();self.output=QLineEdit();line=QHBoxLayout();line.addWidget(self.output,1);self.add_button(line,_t('选择…'),self.output_folder);_ui(form.addRow, _t('批次输出目录'),line)
-        self.naming=QLineEdit();_ui(form.addRow, _t('命名模板'),self.naming);layout.addLayout(form)
+        self.naming=QLineEdit();_ui(form.addRow, _t('命名模板'),self.naming)
+        self.photo_export_format=format_combo(_t('导出格式'),PHOTO_FORMAT_LABELS,'tiff')
+        _ui(form.addRow,_t('导出格式'),self.photo_export_format)
+        self.contact_format=format_combo(_t('联系表格式'),CONTACT_FORMAT_LABELS,'png')
+        _ui(form.addRow,_t('联系表格式'),self.contact_format)
+        layout.addLayout(form)
         line=QHBoxLayout();self.whole=_ui(QCheckBox, _t('包含每个文件的全部帧'));self.review_required=_ui(QCheckBox, _t('加入队列前要求人工复核'))
-        self.jpeg_export=_ui(QCheckBox,_t('同时导出 JPEG'))
-        for widget in (self.whole,self.review_required,self.jpeg_export):line.addWidget(widget)
+        for widget in (self.whole,self.review_required):line.addWidget(widget)
         layout.addLayout(line);line=QHBoxLayout()
         for text,fn in [(_t('保存导出设置'),self.save_settings),(_t('固定参数并加入导出队列'),self.enqueue),(_t('开始 / 继续本批次导出'),self.start_exports),(_t('暂停导出队列'),parent.queue_controller.pause)]:self.add_button(line,text,fn)
         layout.addLayout(line)
@@ -277,19 +281,21 @@ class BatchDialog(QDialog):
         from PySide6.QtCore import QItemSelectionModel
         self.table.selectionModel().select(self.table.model().index(row,1),QItemSelectionModel.SelectionFlag.Select|QItemSelectionModel.SelectionFlag.Rows)
     def load_settings(self):
-        c=self.store.get(self.identifier)['config']
+        c=settings(self.store.get(self.identifier)['config'])
         for widget,key in ((self.input_mode,'input_mode'),(self.color,'input_color'),(self.space,'working_space'),(self.method,'method'),(self.stop,'stop_after'),(self.sync_mode,'sync_mode'),(self.rule,'group_rule')):widget.setCurrentIndex(max(0,widget.findData(c[key])))
         for key,check in self.field_checks.items():check.setChecked(key in c['fields'])
         self.delta.setValue(c['exposure_delta']);_ui(self.naming.setText, c['template']);_ui(self.output.setText, c['output'])
         self.whole.setChecked(c['whole_roll']);self.review_required.setChecked(c['require_review'])
-        self.jpeg_export.setChecked(c.get('jpeg',False))
+        self.photo_export_format.setCurrentIndex(self.photo_export_format.findData(c['format']))
+        self.contact_format.setCurrentIndex(self.contact_format.findData(c['contact_format']))
     def save_settings(self):
         if not self.identifier:return
         def apply():
             c=self.store.get(self.identifier)['config']
             for widget,key in ((self.input_mode,'input_mode'),(self.color,'input_color'),(self.space,'working_space'),(self.method,'method'),(self.stop,'stop_after'),(self.sync_mode,'sync_mode'),(self.rule,'group_rule')):c[key]=widget.currentData()
             c.update(fields=[k for k,v in self.field_checks.items() if v.isChecked()],exposure_delta=self.delta.value(),template=self.naming.text(),output=self.output.text(),
-                     whole_roll=self.whole.isChecked(),require_review=self.review_required.isChecked(),jpeg=self.jpeg_export.isChecked())
+                     whole_roll=self.whole.isChecked(),require_review=self.review_required.isChecked(),
+                     format=self.photo_export_format.currentData(),contact_format=self.contact_format.currentData())
             self.store.configure(self.identifier,c);_ui(self.message.setText, _t('设置已保存；不会改变已加入队列的参数快照'))
             return True
         return self.attempt(apply)

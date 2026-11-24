@@ -5,6 +5,12 @@ import re,string
 DEFAULT='{source}-f{frame:04d}-positive'
 FIELDS={'source','frame','roll','date'}
 
+def photo_format(config=None):
+    config=config or {}
+    value=config.get('format','both' if config.get('jpeg') else 'tiff')
+    if value not in ('tiff','jpeg','both'):raise ValueError('请选择有效的照片导出格式')
+    return value
+
 def validate(template):
     if not isinstance(template,str) or len(template)>160:raise ValueError('命名模板须为不超过 160 字符的文字')
     if not template:return template
@@ -29,11 +35,14 @@ def options(template='',roll='',date=''):
 
 def filename(source,frame,config=None,legacy=None):
     config=config or {};template=validate(config.get('template',''))
-    if not template:return legacy or f'frame-{frame:04d}.tif'
+    jpeg=photo_format(config)=='jpeg'
+    if not template:
+        name=legacy or f'frame-{frame:04d}.tif'
+        return str(Path(name).with_suffix('.jpg')) if jpeg else name
     name=template.format(source=clean(Path(source).stem),frame=frame,roll=clean(config.get('roll','未命名卷')),date=options(date=config.get('date',''))['date'])
     if len(name)>180 or not name or name!=name.strip(' .') or any(c in name for c in '<>:"/\\|?*') or any(ord(c)<32 for c in name):raise ValueError('命名结果过长、为空或含无效字符')
     if name.split('.')[0].upper() in {'CON','PRN','AUX','NUL',*[f'{prefix}{i}' for prefix in ('COM','LPT') for i in range(1,10)]}:raise ValueError('命名结果是 Windows 保留设备名')
-    return name+'.tif'
+    return name+('.jpg' if jpeg else '.tif')
 
 def names(source,indices,config=None,legacy=None):
     result=[filename(source,i+1,config,legacy(i) if legacy else None) for i in indices]

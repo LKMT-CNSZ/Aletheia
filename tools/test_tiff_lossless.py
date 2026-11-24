@@ -4,7 +4,7 @@ import os,sys,tempfile,threading,struct,zlib,time,json
 os.environ['QT_QPA_PLATFORM']='offscreen'
 ROOT=Path(__file__).resolve().parents[1];sys.path[:0]=[str(ROOT),str(ROOT/'vendor')]
 import numpy as np
-import hdr_io,desktop_model as model,core
+import hdr_io,desktop_model as model,core,colorio
 from tiffio import write_tiff_rgb16
 from tiffread import read_tiff_linear,read_tiff
 from tiff_formats import export_formats
@@ -81,8 +81,9 @@ with tempfile.TemporaryDirectory(dir=folder) as tmp:
         else:raise AssertionError('TIFF export UI timeout')
         assert not errors,errors
     w.open_path(str(source));idle();value=dict(w.p,mode='positive',black=0,white=1);w.set_parameters(value);idle()
-    formats=export_formats();assert len(formats)==4 and not any('JPEG' in label or '.jxr' in label for label in formats)
-    for i,(label,(hdr,compression)) in enumerate(formats.items()):
+    formats=export_formats();assert len(formats)==5 and not any('Ultra HDR' in label or '.jxr' in label for label in formats)
+    for label,(hdr,compression) in formats.items():
+        if compression is None:continue
         dest=root/(f'ui-{hdr}-{compression}.jpg')
         with patch.object(ui.QFileDialog,'getSaveFileName',return_value=(str(dest),label)) as save:
             w.export_dialog();idle();assert save.call_args.args[3].split(';;')==list(formats)
@@ -95,14 +96,24 @@ with tempfile.TemporaryDirectory(dir=folder) as tmp:
         if hdr:assert 'recipe' not in hdr_io.metadata(dest)
     assert np.array_equal(read_tiff_linear(root/'ui-True-none.tif').view(np.uint32),read_tiff_linear(root/'ui-True-deflate.tif').view(np.uint32))
     assert np.array_equal(read_tiff(root/'ui-False-none.tif'),read_tiff(root/'ui-False-deflate.tif'))
-    w.jpeg_export.setChecked(True)
+    w.photo_export_format.setCurrentIndex(w.photo_export_format.findData('both'))
     hdr_pair=root/'hdr-pair.tif'
     w.hdr_export_to(str(hdr_pair));idle()
     assert np.array_equal(read_tiff_linear(hdr_pair),read_tiff_linear(root/'ui-True-deflate.tif'))
     from PIL import Image
     with Image.open(hdr_pair.with_suffix('.jpg')) as jpg:
         assert jpg.format=='JPEG' and jpg.info.get('icc_profile')
-    w.jpeg_export.setChecked(False)
+    jpeg_filter=next(label for label,pair in formats.items() if pair==(False,None))
+    with patch.object(ui.QFileDialog,'getSaveFileName',return_value=(str(root/'standalone.tif'),jpeg_filter)):
+        w.export_dialog();idle()
+    with Image.open(root/'standalone.jpg') as jpg:
+        assert jpg.format=='JPEG' and jpg.size==(image.shape[1],image.shape[0])
+        assert jpg.info['icc_profile']==colorio.icc_profile('srgb')
+    assert not (root/'standalone.tif').exists()
+    w.photo_export_format.setCurrentIndex(w.photo_export_format.findData('jpeg'))
+    with patch.object(ui.QFileDialog,'getSaveFileName',return_value=('',jpeg_filter)) as save:
+        w.export_dialog();assert save.call_args.args[4]==jpeg_filter and save.call_args.args[2].endswith('.jpg')
+    w.photo_export_format.setCurrentIndex(w.photo_export_format.findData('tiff'))
     default=next(label for label,pair in formats.items() if pair==(True,'deflate'))
     w.settings.setValue('tiffCompression','deflate');w.hdr_canvas.active=True
     try:
@@ -116,5 +127,5 @@ with tempfile.TemporaryDirectory(dir=folder) as tmp:
         w.hdr_export_dialog();idle()
     assert hdr_io.tags(root/'english.tif')[259]==8
     w.close();app.processEvents()
-(folder/'results.json').write_text(json.dumps({'status':'pass','float32_bytes_exact':True,'independent_deflate_decode':True,'single_multi_strip_noncontiguous':True,'srgb_prophoto_metadata':True,'HDR_values_and_reload':True,'SDR_16bit_exact':True,'cancel_no_overwrite':True,'four_TIFF_only_filters_and_bilingual':True,'compressible_fixture_bytes':sizes},indent=2),'utf-8')
-print('PASS lossless float32/16-bit TIFF bytes, independent ZIP strip decode, HDR reopen/metadata, cancellation, overwrite protection, TIFF-only options and bilingual export routing')
+(folder/'results.json').write_text(json.dumps({'status':'pass','float32_bytes_exact':True,'independent_deflate_decode':True,'single_multi_strip_noncontiguous':True,'srgb_prophoto_metadata':True,'HDR_values_and_reload':True,'SDR_16bit_exact':True,'cancel_no_overwrite':True,'TIFF_and_JPEG_filters_and_bilingual':True,'compressible_fixture_bytes':sizes},indent=2),'utf-8')
+print('PASS lossless float32/16-bit TIFF, full-size sRGB JPEG-only and HDR companion exports, cancel and bilingual routing')

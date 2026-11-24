@@ -31,7 +31,7 @@ import core
 import calibration
 import geometry
 from file_io import io_path
-from native_widgets import photo_icon,dropped_paths
+from native_widgets import photo_icon,dropped_paths,format_combo,choose_format,PHOTO_FORMAT_LABELS,CONTACT_FORMAT_LABELS
 from native_calibration import CalibrationDialog
 from native_local import LocalDialog
 from native_geometry import GeometryDialog
@@ -196,7 +196,7 @@ class MainWindow(QMainWindow):
         self.project_save_action=self.action(_t('保存工程'),self.save_project_dialog,'Ctrl+Alt+S');file.addAction(self.project_save_action)
         self.project_as_action=self.action(_t('工程另存为…'),lambda:self.save_project_dialog(True));file.addAction(self.project_as_action)
         file.addSeparator()
-        self.export_action=self.action(_t('导出 TIFF / HDR…'),self.export_dialog,'Ctrl+Shift+S');file.addAction(self.export_action)
+        self.export_action=self.action(_t('导出照片…'),self.export_dialog,'Ctrl+Shift+S');file.addAction(self.export_action)
         self.roll_action=self.action(_t('整卷导出…'),self.batch_dialog);file.addAction(self.roll_action)
         file.addSeparator();self.save_action=self.action(_t('保存参数配方…'),self.save_recipe,'Ctrl+S');file.addAction(self.save_action)
         self.load_action=self.action(_t('载入参数配方…'),self.load_recipe,'Ctrl+L');file.addAction(self.load_action)
@@ -250,7 +250,7 @@ class MainWindow(QMainWindow):
         help_menu.addAction(self.action(_t('批量操作与快捷键…'),self.show_efficiency_help))
         help_menu.addAction(self.action(_t('打开用户数据目录'),lambda:QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.profile.resolve())))))
         help_menu.addAction(self.action(_t('关于'),lambda:_ui(QMessageBox.about, self,APP_NAME,
-            _tf('{0} {1} 正式版\n照片库 · 参数快照队列 · 片边辅助 · 色卡标定\n官方 Python 运行时与应用文件分开分发。', APP_NAME, model.VERSION.removesuffix("-native")))))
+            _tf('{0} {1}\n照片库 · 参数快照队列 · 片边辅助 · 色卡标定\n官方 Python 运行时与应用文件分开分发。', APP_NAME, model.VERSION.removesuffix("-native")))))
     def _build_toolbar(self):
         bar=_ui(QToolBar, _t('主工具栏'),self);bar.setObjectName('mainToolbar');bar.setMovable(False);self.addToolBar(bar)
         bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon);bar.setIconSize(QSize(16,16))
@@ -278,7 +278,7 @@ class MainWindow(QMainWindow):
         bar.addAction(self.hdr_canvas_action)
         self.hdr_display_button=_ui(QPushButton,_t('HDR 显示…'));self.hdr_display_button.clicked.connect(self.open_hdr_display);bar.addWidget(self.hdr_display_button)
         bar.addAction(self.project_save_action)
-        self.export_button=_ui(QPushButton, _t('导出 TIFF / HDR…'));self.export_button.setProperty('role','primary')
+        self.export_button=_ui(QPushButton, _t('导出照片…'));self.export_button.setProperty('role','primary')
         self.export_button.clicked.connect(self.export_dialog);bar.addWidget(self.export_button);bar.addAction(self.roll_action)
         self.sample_actions={}
         for key,title in (('base',_t('点片基')),('anchor',_t('点黑场')),('gray',_t('点中性灰')),
@@ -570,11 +570,12 @@ class MainWindow(QMainWindow):
         self.flat_label=self.note(restore,_t('未启用平场'))
         self.note(restore,_t('单张图的参考必须同尺寸、同方向、同一光路；整条片使用帧间隙估计横向照明。暗角补偿后重新取片基。'))
         restore.addStretch()
-        output=self.page(_t('导出'));self.section(output,_t('16bit TIFF 与色彩管理'))
-        self.jpeg_export=_ui(QCheckBox,_t('同时导出 JPEG'))
-        self.jpeg_export.setChecked(self.settings.value('exportJpeg',False,type=bool))
-        self.jpeg_export.toggled.connect(lambda checked:self.settings.setValue('exportJpeg',checked))
-        output.addWidget(self.jpeg_export)
+        output=self.page(_t('导出'));self.section(output,_t('导出格式与色彩管理'))
+        previous='both' if self.settings.value('exportJpeg',False,type=bool) else 'tiff'
+        self.photo_export_format=format_combo(_t('导出格式'),PHOTO_FORMAT_LABELS,self.settings.value('photoExportFormat',previous))
+        self.photo_export_format.currentIndexChanged.connect(lambda _:self.settings.setValue('photoExportFormat',self.photo_export_format.currentData()))
+        output.addWidget(self.photo_export_format)
+        self.note(output,_t('JPEG 以全尺寸 SDR sRGB 保存。选择「TIFF 和 JPEG」会在导出 TIFF 时另存 JPEG。'))
         self.combo(output,_t('TIFF 输出空间'),'output_space',[('sRGB','srgb'),('Adobe RGB (1998)','adobe_rgb'),('ProPhoto RGB','prophoto')])
         self.note(output,_t('输出空间用于保存 TIFF 和嵌入 ICC。RAW 解码与片基取样使用当前工作空间；更改请用“编辑 → 更改当前工作空间”。'))
         self.note(output,_t('导出嵌入匹配的 ICC。直方图与越界叠层基于所选 TIFF 空间；预览抽样不代表全尺寸统计。'))
@@ -584,8 +585,8 @@ class MainWindow(QMainWindow):
         self.section(output,_t('命名与联系表'))
         self.naming_edit=QLineEdit(str(self.settings.value('naming_template','')));_ui(self.naming_edit.setPlaceholderText, _t('留空保持旧命名，或 {source}-f{frame:04d}'));output.addWidget(self.naming_edit)
         self.naming_edit.editingFinished.connect(lambda:self.settings.setValue('naming_template',self.naming_edit.text()))
-        self.note(output,_t('支持 {source} / {frame:04d} / {roll} / {date}；自动追加 .tif。队列使用照片库胶卷标签，加入时固定命名。'))
-        self.button_row(output,[(_t('导出整卷 PNG 联系表…'),self.contact_dialog)])
+        self.note(output,_t('支持 {source} / {frame:04d} / {roll} / {date}；按格式添加扩展名。队列加入时固定名称与格式。'))
+        self.button_row(output,[(_t('导出整卷联系表…'),self.contact_dialog)])
         self.section(output,_t('参数与会话'))
         self.button_row(output,[(_t('保存配方'),self.save_recipe),(_t('载入配方'),self.load_recipe)])
         self.button_row(output,[(_t('保存整卷工程'),self.save_project_dialog),(_t('打开整卷工程'),self.open_project_dialog)])
@@ -1350,20 +1351,25 @@ class MainWindow(QMainWindow):
         return {'rating':0,'flag':'none','roll':''}
     def export_options(self):
         from export_policy import options
-        return dict(options(self.naming_edit.text().strip(),self.current_metadata()['roll']),jpeg=self.jpeg_export.isChecked())
+        return dict(options(self.naming_edit.text().strip(),self.current_metadata()['roll']),format=self.photo_export_format.currentData())
     def contact_dialog(self):
         if not self.loaded:return
+        default=self.settings.value('contactFormat','png')
+        format=choose_format(self,_t('导出整卷联系表'),CONTACT_FORMAT_LABELS,default if default in CONTACT_FORMAT_LABELS else 'png')
+        if format is None:return
         folder=_ui(QFileDialog.getExistingDirectory, self,_t('选择联系表输出位置'),self.output_edit.text())
-        if folder:self.contact_to(folder)
-    def contact_to(self,folder):
+        if folder:
+            self.settings.setValue('contactFormat',format)
+            self.contact_to(folder,format)
+    def contact_to(self,folder,format='png'):
         from contact_sheet import export
         try:
             snapshot=model.project_snapshot(copy.deepcopy(self.p),self.project_options());snapshot['_export']=self.export_options()
         except ValueError as error:self.show_error(str(error));return
         def done(result):
             self.last_export=result['folder'];_ui(self.last_path_label.setText, _t('联系表：')+result['folder'])
-            _ui(self.statusBar().showMessage, _tf('已保存 {0} 页 PNG 联系表 / {1} 帧：', result['pages'], result['frames'])+result['folder'])
-        self.command(lambda c,p:export(folder,snapshot,c,p),done,_t('正在生成整卷联系表…'),'contact')
+            _ui(self.statusBar().showMessage, _tf('已保存 {0} 页联系表 / {1} 帧：', result['pages'], result['frames'])+result['folder'])
+        self.command(lambda c,p:export(folder,snapshot,c,p,format=format),done,_t('正在生成整卷联系表…'),'contact')
     def pack_dialog(self):
         if not self.loaded:return
         path,_=_ui(QFileDialog.getSaveFileName, self,_t('打包当前整卷工程与原片'),str(Path(self.output_edit.text())/(Path(self.info['path']).stem+'.filmtransfer')),_t('工程迁移包 (*.filmtransfer)'))
@@ -1406,25 +1412,42 @@ class MainWindow(QMainWindow):
         path.mkdir(parents=True,exist_ok=True);QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
     def export_dialog(self,checked=False,*,hdr=None):
         if not self.loaded:return
+        jpeg_default=hdr is None and self.photo_export_format.currentData()=='jpeg'
         hdr=self.hdr_canvas.active if hdr is None else hdr
         from tiff_formats import export_formats
         formats=export_formats()
         compression=self.settings.value('tiffCompression','deflate')
         if compression not in ('none','deflate'):compression='deflate'
-        default_filter=next(label for label,pair in formats.items() if pair==(bool(hdr),compression))
+        default_pair=(False,None) if jpeg_default else (bool(hdr),compression)
+        default_filter=next(label for label,pair in formats.items() if pair==default_pair)
         stem=Path(self.info['path']).stem;info=self.info.get('strip');suffix=_tf('-f{0:02d}',info['index']+1) if info else ''
         try:
             from export_policy import filename
-            name=filename(self.info['path'],info['index']+1 if info else 1,self.export_options(),_tf('{0}{1}-positive.tif',stem,suffix))
+            options=dict(self.export_options(),format='jpeg' if jpeg_default else 'tiff')
+            name=filename(self.info['path'],info['index']+1 if info else 1,options,_tf('{0}{1}-positive.tif',stem,suffix))
         except ValueError as error:self.show_error(str(error));return
-        if hdr:name=Path(name).stem+'-hdr.tif'
+        if hdr and not jpeg_default:name=Path(name).stem+'-hdr.tif'
         default=Path(self.output_edit.text())/name
-        path,selected=_ui(QFileDialog.getSaveFileName,self,_t('导出 TIFF / HDR'),str(default),';;'.join(formats),default_filter)
+        path,selected=_ui(QFileDialog.getSaveFileName,self,_t('导出照片'),str(default),';;'.join(formats),default_filter)
         if not path:return
-        if selected not in formats:self.show_error(str(_t('请选择 TIFF 导出格式。')));return
+        if selected not in formats:self.show_error(str(_t('请选择有效的照片导出格式')));return
         output_hdr,compression=formats[selected]
-        if Path(path).suffix.lower() in ('.jxr','.jpg','.jpeg','.png'):path=str(Path(path).with_suffix('.tif'))
-        elif Path(path).suffix.lower() not in ('.tif','.tiff'):path+='.tif'
+        target=Path(path)
+        ext=target.suffix.lower()
+        jpeg=compression is None
+        extensions=('.jpg','.jpeg') if jpeg else ('.tif','.tiff')
+        if ext not in extensions:
+            extension='.jpg' if jpeg else '.tif'
+            target=target.with_suffix(extension) if ext in ('.tif','.tiff','.jpg','.jpeg','.jxr','.png') else Path(path+extension)
+        if io_path(target).resolve()==io_path(self.info['path']).resolve():
+            self.show_error(str(_t('导出不能覆盖原片。')));return
+        if target!=Path(path) and io_path(target).exists():
+            reply=_ui(QMessageBox.question,self,_t('导出照片'),_tf('替换已存在的文件？\n{0}',str(target)))
+            if reply!=QMessageBox.StandardButton.Yes:return
+        path=str(target)
+        if jpeg:
+            self.export_to(path,jpeg_only=True)
+            return
         self.settings.setValue('tiffCompression',compression)
         if output_hdr:self.hdr_export_to(path,compression=compression)
         else:self.export_to(path,compression=compression)
@@ -1442,7 +1465,7 @@ class MainWindow(QMainWindow):
     def hdr_export_to(self,path,compression='deflate'):
         if not self.loaded:return
         value=copy.deepcopy(self.p)
-        jpeg=self.jpeg_export.isChecked()
+        jpeg=self.photo_export_format.currentData()=='both'
         def done(result):
             self.last_export=result;_ui(self.last_path_label.setText,_t('已保存：\n')+result)
             _ui(self.output_edit.setText,str(Path(result).parent));self.settings.setValue('output',self.output_edit.text())
@@ -1510,19 +1533,25 @@ class MainWindow(QMainWindow):
             if old is not None:old.close()
             self.hdr_preview_dialog=HDRPreview(result,self);self.hdr_preview_dialog.show()
         self.command(lambda c,p:model.hdr_preview(value),done,_t('正在准备 HDR 屏幕预览…'))
-    def export_to(self,path,compression='deflate'):
+    def export_to(self,path,compression='deflate',jpeg_only=False):
         value=copy.deepcopy(self.p)
-        jpeg=self.jpeg_export.isChecked()
+        jpeg=not jpeg_only and self.photo_export_format.currentData()=='both'
+        status=_t('已保存 JPEG：') if jpeg_only else _t('已保存 TIFF 和 JPEG：') if jpeg else _t('16 位 TIFF 已保存：')
         def done(result):
             self.last_export=result;_ui(self.last_path_label.setText, _t('已保存：\n')+result)
             _ui(self.output_edit.setText, str(Path(result).parent));self.settings.setValue('output',self.output_edit.text())
-            _ui(self.statusBar().showMessage, (_t('已保存 TIFF 和 JPEG：') if jpeg else _t('16 位 TIFF 已保存：'))+result)
+            _ui(self.statusBar().showMessage,status+result)
         self.command(lambda c,p:model.export_image(path,value,compression=compression,
-                     progress=lambda done,total:p(done,total,''),jpeg=jpeg),done,_t('正在导出全尺寸 TIFF…'),'export')
+                     progress=lambda done,total:p(done,total,''),jpeg=jpeg,jpeg_only=jpeg_only),
+                     done,_t('正在导出全尺寸 JPEG…') if jpeg_only else _t('正在导出全尺寸 TIFF…'),'export')
     def batch_dialog(self):
         if not self.info.get('strip'):return
+        format=choose_format(self,_t('整卷导出'),PHOTO_FORMAT_LABELS,self.photo_export_format.currentData())
+        if format is None:return
         folder=_ui(QFileDialog.getExistingDirectory, self,_t('选择整卷输出位置'),self.output_edit.text())
-        if folder:self.batch_to(folder)
+        if folder:
+            self.photo_export_format.setCurrentIndex(self.photo_export_format.findData(format))
+            self.batch_to(folder)
     def batch_to(self,folder):
         value=copy.deepcopy(self.p);meter=self.meter_check.isChecked()
         try:config=self.export_options()

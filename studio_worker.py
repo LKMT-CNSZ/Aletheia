@@ -26,8 +26,8 @@ def publish(stage,destination,expected):
 
 def recover_output(store,job,index,record,preferred=None,reserved=()):
     directory=Path(job['destination'])
-    part=record['tiff']
-    companion=record.get('jpeg')
+    part=record.get('tiff') or record['jpeg']
+    companion=record.get('jpeg') if 'tiff' in record else None
     stage=io_path(directory/part['stage'])
     if preferred is not None and record['state']=='prepared' and stage.is_file():
         from export_policy import available_name
@@ -103,8 +103,10 @@ def execute(store,identifier,progress=lambda *args:None):
             # Existing project loader verifies the source hash and frame layout.
             model.open_project(store.materialize(snapshot,'job-'+identifier))
             store.flatten_unstarted_export(job)
-            from export_policy import names
-            filenames=names(snapshot['source']['path'],job['indices'],snapshot.get('_export'))
+            from export_policy import names,photo_format
+            options=snapshot.get('_export') or {}
+            format=photo_format({'jpeg':snapshot.get('_export_jpeg'),**options})
+            filenames=names(snapshot['source']['path'],job['indices'],options)
             reserved={name.casefold() for name in filenames}
             flat=snapshot.get('_flat_export',False)
             directory=io_path(job['destination']);directory.mkdir(parents=True,exist_ok=True)
@@ -116,12 +118,13 @@ def execute(store,identifier,progress=lambda *args:None):
                     name=filenames[number];final=directory/name
                     if not flat and final.exists():raise ValueError('目标文件已经存在，已保留文件；请新建任务：'+str(final))
                     stage=directory/('.pending-'+uuid.uuid4().hex+'.part')
-                    jpeg=stage.with_suffix('.jpg.part') if snapshot.get('_export_jpeg') else None
+                    primary='jpeg' if format=='jpeg' else 'tiff'
+                    jpeg=stage.with_suffix('.jpg.part') if format=='both' else None
                     try:
-                        model.export_image(stage,p.__dict__,array,staged_jpeg=jpeg)
+                        model.export_image(stage,p.__dict__,array,staged_jpeg=jpeg,jpeg_only=primary=='jpeg')
                         record={'state':'prepared','frame':index+1,'params':p.__dict__,'source_region':model.source_region(index),
-                            'tiff':{'stage':stage.name,'name':name}}
-                        outputs={'tiff':stage}
+                            primary:{'stage':stage.name,'name':name}}
+                        outputs={primary:stage}
                         if jpeg is not None:
                             record['jpeg']={'stage':jpeg.name,'name':str(Path(name).with_suffix('.jpg'))}
                             outputs['jpeg']=jpeg

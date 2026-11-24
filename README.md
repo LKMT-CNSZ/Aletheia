@@ -1,6 +1,6 @@
 # Aletheia
 
-**3.2.0 正式版**　改进整卷切帧、重估片基、独立帧编辑与缩略图，支持 SDR 和 HDR TIFF 无损压缩，并恢复双语安装器的实拍示意。
+**3.2.1-rc1 本地试用版**　单张、整卷、照片库和批次支持仅导出 JPEG，联系表可选 PNG 或 JPEG。
 
 **在本机完成胶片反相、逐帧精修与批量交付。**
 
@@ -8,7 +8,7 @@ Aletheia 是一款面向 Windows 的胶片数字化修片工具，适用于相�
 
 软件采用黑白灰的极简“暗房”布局：中央大图、右侧调色、底部照片与胶片帧导航。既适合逐张处理，也支持把一批照片组织成可暂停、可恢复、经过人工复核的导出流程。
 
-**当前版本：3.2.0 正式版 · Windows x64 · 安装版 / 免安装版**
+**当前版本：3.2.1-rc1 · Windows x64 安装测试版**
 
 [English introduction](README.en.md)
 
@@ -81,7 +81,7 @@ Aletheia 是一款面向 Windows 的胶片数字化修片工具，适用于相�
 
 ## 下载与安装
 
-从 [v3.2.0 发布页](https://github.com/LKMT-CNSZ/Aletheia/releases/tag/v3.2.0) 获取 Windows x64 版。
+已发布的正式版可从 [v3.2.0 发布页](https://github.com/LKMT-CNSZ/Aletheia/releases/tag/v3.2.0) 下载。
 
 | 文件 | 用途 |
 | --- | --- |
@@ -186,7 +186,7 @@ Aletheia 是一款面向 Windows 的胶片数字化修片工具，适用于相�
 
 ## TIFF 导出与无损压缩
 
-「导出 TIFF / HDR…」仅提供 TIFF：SDR 16 位和 HDR Float32，各有「无损压缩 ZIP」与「不压缩」选项。默认无损压缩，记住上次选择的压缩方式；主画布 HDR 开启时默认选 HDR TIFF，文件菜单「导出线性 HDR TIFF」也默认 HDR。JPEG XR 与 Ultra HDR JPEG 已从导出界面移除。单张导出可同时保存普通 SDR JPEG 副本。整卷／批量导出继续使用 SDR 16 位无损 TIFF。
+「导出照片…」支持全尺寸 SDR JPEG、SDR 16 位 TIFF 和 HDR Float32 TIFF。TIFF 可选无损 ZIP 或不压缩，默认使用无损 ZIP。整卷、照片库队列和批次可选「仅 TIFF」「仅 JPEG」或「TIFF 和 JPEG」。JPEG 嵌入 sRGB ICC，HDR 调色使用当前的 SDR 输出映射。整卷和批次联系表可选 PNG 或 JPEG。
 
 ZIP 使用标准 TIFF Deflate 无损压缩，不缩小分辨率、不降低位深。HDR 仍为 32 位浮点 RGB，保留线性 ICC、处理元数据与超过参考白的亮部；压缩文件可重新导入。未压缩数据每像素 12 字节，4320 × 5760 约 299 MB（285 MiB）。实际压缩率取决于画面、颗粒和噪声，仍可能较大。保存为 HDR TIFF 不保证所有看图软件都能按 HDR 亮度显示。
 

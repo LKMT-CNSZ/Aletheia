@@ -60,7 +60,8 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build/tests',prefix='batch-ui-') as t
     dialog.proof(4);app.processEvents();assert len(dialog.proof_dialog.cells)==4
     dialog.proof_dialog.before.setChecked(True);app.processEvents();assert all(not c.pixmap().isNull() for c in dialog.proof_dialog.cells)
     dialog.proof_dialog.close();dialog.proof(9);app.processEvents();assert len(dialog.proof_dialog.cells)==9;dialog.proof_dialog.close()
-    dialog.review();dialog.jpeg_export.setChecked(True);dialog.enqueue();data=window.batch_store.get(identifier)
+    dialog.review();dialog.photo_export_format.setCurrentIndex(dialog.photo_export_format.findData('both'))
+    dialog.enqueue();data=window.batch_store.get(identifier)
     assert len([i for i in data['items'] if i.get('job')])==9
     frozen=[window.studio_store.get_job(i['job'])['snapshot'] for i in data['items']]
     dialog.naming.setText('future-{frame:03d}');assert dialog.save_settings()
@@ -72,14 +73,23 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build/tests',prefix='batch-ui-') as t
     assert len(list(output.iterdir()))==18 and all(path.is_file() and path.suffix in ('.tif','.jpg') for path in output.iterdir())
     assert {path.stem for path in output.glob('*.tif')}=={path.stem for path in output.glob('*.jpg')}
     assert not data.get('report')
+    window.batch_store.new_round(identifier)
+    dialog.output.setText(str(folder/'jpeg-only'));dialog.naming.setText('{source}-{frame:03d}')
+    dialog.photo_export_format.setCurrentIndex(dialog.photo_export_format.findData('jpeg'))
+    dialog.contact_format.setCurrentIndex(dialog.contact_format.findData('jpeg'))
+    dialog.review();dialog.enqueue();dialog.start_exports();idle(True)
+    assert len(list((folder/'jpeg-only').iterdir()))==9 and len(list((folder/'jpeg-only').glob('*.jpg')))==9
     dialog.run('report');idle(True);data=window.batch_store.get(identifier)
     assert data.get('report'),data.get('report_error')
     summary=json.loads((Path(data['report']['path'])/'batch-summary.json').read_text('utf-8'))
     assert summary['completed_frames']==9 and len(summary['contact_pages'])==1 and not summary['failures']
+    assert all(item['outputs'][0]['path'].endswith('.jpg') for item in summary['items'])
+    with Image.open(summary['contact_pages'][0]) as page:
+        assert page.format=='JPEG' and page.info.get('icc_profile')
     assert all(hashlib.sha256(Path(p).read_bytes()).hexdigest()==value for p,value in hashes.items())
     window.loaded=False;window.close();app.processEvents()
     restored=ui.MainWindow(folder/'profile');restored.show();restored.open_workflow();app.processEvents()
     assert restored.workflow_dialog.identifier==identifier and restored.workflow_dialog.table.rowCount()==9
     assert any('需检查' in restored.workflow_dialog.table.item(i,5).text() for i in range(9))
     restored.loaded=False;restored.close();app.processEvents()
-print('PASS Qt batch workflow, nine image-only export processes, progress, explicit sRGB contact/report and source identity')
+print('PASS Qt batch workflow, TIFF+JPEG and JPEG-only isolated exports, progress, JPEG contact/report and source identity')

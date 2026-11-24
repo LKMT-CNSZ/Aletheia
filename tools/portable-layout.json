@@ -1,6 +1,6 @@
 {
   "format": "film-invert-portable-runtime",
-  "version": "3.2.0",
+  "version": "3.2.1-rc1",
   "python": "3.13.17",
   "architecture": "Windows x64",
   "entry": "runtime/pythonw.exe -I -m film_invert_launcher",
@@ -17,6 +17,15 @@
     ],
     "5ae0fdea81ba081662098df8b0038e9b99fe703a7fea8269c405c1b93201b288": [
       "0280edb38aa95dabeae33d26a739d6732dcc3e2c60aff2a7cfffbe449f9c96b9"
+    ],
+    "e50c6b6bf260edfbf096bed524b3dbb194d6e8f7c09ae9efe1cb937f7a4c2783": [
+      "5ae0fdea81ba081662098df8b0038e9b99fe703a7fea8269c405c1b93201b288",
+      "0280edb38aa95dabeae33d26a739d6732dcc3e2c60aff2a7cfffbe449f9c96b9"
+    ],
+    "3fa7bad2104e2f279ec746774ed26d2b64826eabcbb2a4555e4babb68790d63e": [
+      "e50c6b6bf260edfbf096bed524b3dbb194d6e8f7c09ae9efe1cb937f7a4c2783",
+      "5ae0fdea81ba081662098df8b0038e9b99fe703a7fea8269c405c1b93201b288",
+      "0280edb38aa95dabeae33d26a739d6732dcc3e2c60aff2a7cfffbe449f9c96b9"
     ]
   },
   "compatible_hdr_queue_engines": {
@@ -27,6 +36,15 @@
       "74b4a453533a8d1a24dbcb93f70b13870a972569e870075f74a1f7d57cf8e00a"
     ],
     "5ae0fdea81ba081662098df8b0038e9b99fe703a7fea8269c405c1b93201b288": [
+      "0280edb38aa95dabeae33d26a739d6732dcc3e2c60aff2a7cfffbe449f9c96b9"
+    ],
+    "e50c6b6bf260edfbf096bed524b3dbb194d6e8f7c09ae9efe1cb937f7a4c2783": [
+      "5ae0fdea81ba081662098df8b0038e9b99fe703a7fea8269c405c1b93201b288",
+      "0280edb38aa95dabeae33d26a739d6732dcc3e2c60aff2a7cfffbe449f9c96b9"
+    ],
+    "3fa7bad2104e2f279ec746774ed26d2b64826eabcbb2a4555e4babb68790d63e": [
+      "e50c6b6bf260edfbf096bed524b3dbb194d6e8f7c09ae9efe1cb937f7a4c2783",
+      "5ae0fdea81ba081662098df8b0038e9b99fe703a7fea8269c405c1b93201b288",
       "0280edb38aa95dabeae33d26a739d6732dcc3e2c60aff2a7cfffbe449f9c96b9"
     ]
   }

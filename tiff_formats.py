@@ -1,4 +1,4 @@
-"""TIFF export choices; identifiers stay independent of translated UI labels."""
+"""Photo export choices; identifiers stay independent of translated UI labels."""
 def export_formats():
     from i18n import tr as _t
     return {
@@ -6,4 +6,5 @@ def export_formats():
         str(_t('SDR TIFF - 16位 · 不压缩 (*.tif *.tiff)')):(False,'none'),
         str(_t('HDR TIFF - Float32 · 无损压缩 ZIP (*.tif *.tiff)')):(True,'deflate'),
         str(_t('HDR TIFF - Float32 · 不压缩 (*.tif *.tiff)')):(True,'none'),
+        str(_t('SDR JPEG - sRGB (*.jpg *.jpeg)')):(False,None),
     }

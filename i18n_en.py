@@ -1308,3 +1308,28 @@ EN.update({
     '正在估算暗部和亮部偏色…': 'Estimating shadow and highlight casts…',
     '将重新估算彩色负片的片基、白平衡和分区校色，保留裁切、曝光及局部编辑。作用于选中的参与项，未选中时作用于当前筛选中的参与项。可通过批次撤销恢复。': 'Re-estimate film base, white balance and tonal color balance while retaining crop, exposure and local edits. Applies to selected participating photos, or the current filtered set when no rows are selected. Undo from batch history.',
 })
+
+EN.update({
+    '导出照片…': 'Export Photo…',
+    '导出照片': 'Export Photo',
+    '导出格式与色彩管理': 'Export format and color management',
+    '导出格式': 'Export format',
+    '仅 TIFF': 'TIFF only',
+    '仅 JPEG': 'JPEG only',
+    'TIFF 和 JPEG': 'TIFF and JPEG',
+    'JPEG 以全尺寸 SDR sRGB 保存。选择「TIFF 和 JPEG」会在导出 TIFF 时另存 JPEG。':
+        'JPEG uses full-size SDR sRGB. TIFF and JPEG saves a JPEG alongside each TIFF.',
+    '支持 {source} / {frame:04d} / {roll} / {date}；按格式添加扩展名。队列加入时固定名称与格式。':
+        'Supports {source} / {frame:04d} / {roll} / {date}. The extension follows the format. The queue freezes names and formats.',
+    '导出整卷联系表…': 'Export Roll Contact Sheet…',
+    '导出整卷联系表': 'Export Roll Contact Sheet',
+    '联系表格式': 'Contact sheet format',
+    '已保存 {0} 页联系表 / {1} 帧：': 'Saved {0} contact sheet pages / {1} frames: ',
+    '请选择有效的照片导出格式': 'Choose a valid photo export format.',
+    '导出不能覆盖原片。': 'Export cannot overwrite the source photo.',
+    '替换已存在的文件？\n{0}': 'Replace the existing file?\n{0}',
+    '已保存 JPEG：': 'JPEG saved: ',
+    '正在导出全尺寸 JPEG…': 'Exporting full-size JPEG…',
+})
+
+EN['{0} {1}\n照片库 · 参数快照队列 · 片边辅助 · 色卡标定\n官方 Python 运行时与应用文件分开分发。'] = '{0} {1}\nPhoto library · immutable export queue · film-edge tools · chart calibration\nThe official Python runtime ships separately from the application files.'

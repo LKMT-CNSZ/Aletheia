@@ -3,7 +3,7 @@ from i18n import tr as _t, trf as _tf, ui as _ui
 from pathlib import Path
 import os
 import sys
-from native_widgets import photo_icon,dropped_paths
+from native_widgets import photo_icon,dropped_paths,choose_format,PHOTO_FORMAT_LABELS
 from PySide6.QtCore import QObject,Signal,QTimer,QProcess,QUrl,Qt,QProcessEnvironment,QThread,QSize
 from PySide6.QtGui import QDesktopServices,QIcon,QPixmap
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QLineEdit,QComboBox,
@@ -253,10 +253,14 @@ class StudioDialog(QDialog):
     def enqueue(self):
         ids=self.selected_assets()
         if not ids:_ui(self.message.setText, _t('请先选择照片'));return
+        parent=self.parent()
+        format=choose_format(self,_t('选中照片加入导出队列…'),PHOTO_FORMAT_LABELS,parent.photo_export_format.currentData())
+        if format is None:return
         folder=_ui(QFileDialog.getExistingDirectory, self,_t('选择队列输出目录'))
         if not folder:return
         try:
-            jobs=self.store.enqueue(ids,folder,self.whole_roll.isChecked(),self.parent().export_options());self.refresh_queue();_ui(self.message.setText, _tf('已固定 {0} 个任务的参数快照；在导出队列页开始处理', len(jobs)))
+            options=dict(parent.export_options(),format=format)
+            jobs=self.store.enqueue(ids,folder,self.whole_roll.isChecked(),options);self.refresh_queue();_ui(self.message.setText, _tf('已固定 {0} 个任务的参数快照；在导出队列页开始处理', len(jobs)))
         except Exception as error:_ui(self.message.setText, str(error))
     def maintenance(self,work,done,label):
         parent=self.parent()

@@ -58,6 +58,14 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build/tests',prefix='delivery-') as t
  new=set(folder.iterdir())-before
  assert len(new)==21 and all(path.is_file() and path.suffix=='.tif' for path in new)
  assert (Path(roll['folder'])/index['frames'][0]['filename']).is_file()
+ jpeg_roll=model.export_roll(folder/'jpeg',p,False,cancel,lambda *a:None,dict(config,format='jpeg'))
+ jpeg_folder=Path(jpeg_roll['folder'])
+ assert len(list(jpeg_folder.iterdir()))==21 and all(path.suffix=='.jpg' for path in jpeg_folder.iterdir())
+ with Image.open(jpeg_folder/jpeg_roll['frames'][0]['file']) as im:
+  assert im.format=='JPEG' and im.info.get('icc_profile')
+ jpeg_contacts=contact_sheet.export(folder,dict(snapshot,_export=dict(config,format='jpeg')),format='jpeg')
+ with Image.open(Path(jpeg_contacts['folder'])/'contact-001.jpg') as im:
+  assert im.format=='JPEG' and im.info.get('icc_profile')
  print('PASS edited PNG contact pixels/ICC, 21-frame two-page order, contact cancellation cleanup, custom roll names and collision preflight')
  store=StudioStore(folder/'profile');asset=store.capture(snapshot);store.metadata(asset,4,'pick','队列卷')
  cfg=policy.options('{roll}-{source}-{frame:03d}',date='20261023')
@@ -69,6 +77,22 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build/tests',prefix='delivery-') as t
  assert final.is_file();digest=sha256(final);mtime=final.stat().st_mtime_ns
  store.status(job,'paused');store.retry([job]);assert studio_worker.execute(store,job)=='completed'
  assert sha256(final)==digest and final.stat().st_mtime_ns==mtime
+ jpeg_config=dict(captured['_export'],format='jpeg')
+ jpg_job=store.enqueue([asset],folder/'queue',True,jpeg_config)[0]
+ publish=studio_worker.publish_new
+ def interrupted(stage,destination):
+  publish(stage,destination)
+  raise OSError('interrupted after JPEG publication')
+ studio_worker.publish_new=interrupted
+ try:
+  try:studio_worker.execute(store,jpg_job)
+  except OSError:pass
+  else:raise AssertionError('JPEG interruption fixture did not execute')
+ finally:studio_worker.publish_new=publish
+ jpg=store.get_job(jpg_job)['outputs']['0']['jpeg']
+ jpg_path=folder/'queue'/jpg['name'];stamp=jpg_path.stat().st_mtime_ns
+ store.retry([jpg_job]);assert studio_worker.execute(store,jpg_job)=='completed'
+ assert jpg_path.stat().st_mtime_ns==stamp and sha256(jpg_path)==jpg['sha256']
  print('PASS queue names and roll labels frozen at enqueue, verified resume does not rewrite completed TIFF')
  # Pack original and project; move away original before reopening from Chinese/space location.
  model.open_image(source,input_mode='strip',manual=manual);model.preview(p);snapshot=model.project_snapshot(p)

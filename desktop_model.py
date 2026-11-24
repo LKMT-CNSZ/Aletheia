@@ -20,7 +20,7 @@ import geometry
 from loader import load
 from file_io import io_path,temporary_path
 
-VERSION = '3.2.0'
+VERSION = '3.2.1-rc1'
 from preview_cache import PreviewCache
 from document_cache import DocumentCache,BlobCache
 PREVIEWS=PreviewCache()
@@ -822,23 +822,23 @@ def publish_image(temp,dest,unique,companion=None):
     while True:
         name=available_name(dest.parent,dest.name,jpeg=companion is not None)
         target=dest.parent/name
-        tiff=io_path(target)
+        output=io_path(target)
         try:
-            publish_new(temp,tiff)
+            publish_new(temp,output)
         except FileExistsError:
             continue
         if companion is not None:
             try:
-                publish_new(companion,tiff.with_suffix('.jpg'))
+                publish_new(companion,output.with_suffix('.jpg'))
             except OSError as error:
                 # Restore our own TIFF stage if the JPEG could not be published.
-                tiff.rename(temp)
+                output.rename(temp)
                 if isinstance(error,FileExistsError):continue
                 raise
         return target
 
 
-def export_image(destination,value,array=None,compression='deflate',progress=None,unique=False,jpeg=False,staged_jpeg=None):
+def export_image(destination,value,array=None,compression='deflate',progress=None,unique=False,jpeg=False,staged_jpeg=None,jpeg_only=False):
     p = engine.prepare_params(params(value)) if array is None else params(value)
     lin = engine.STATE['full'] if array is None else array
     if lin is None:
@@ -848,7 +848,7 @@ def export_image(destination,value,array=None,compression='deflate',progress=Non
     temp = temporary_path(dest)
     companion = temporary_path(dest) if jpeg else None
     try:
-        engine.export_pixels(str(temp),lin,p,compression=compression,progress=progress,jpeg=companion or staged_jpeg)
+        engine.export_pixels(str(temp),lin,p,compression=compression,progress=progress,jpeg=companion or staged_jpeg,jpeg_only=jpeg_only)
         dest=publish_image(temp,dest,unique or jpeg,companion)
     finally:
         temp.unlink(missing_ok=True)
@@ -862,8 +862,9 @@ def export_roll(folder,value,meter_each,cancel,progress,export_options=None):
     saved = clone(engine.STATE['frame_params'])
     saved[engine.STATE['frame_index']] = clone(value)
     roll = clone(engine.STATE['roll_params'])
-    from export_policy import clean,names
+    from export_policy import clean,names,photo_format
     stem = clean(Path(source).stem)
+    format=photo_format(export_options)
     filenames=names(source,list(range(layout.frame_count)),export_options,lambda i:f'{stem}-f{i+1:02d}-positive.tif')
     dest = Path(folder)
     frames = []
@@ -887,7 +888,7 @@ def export_roll(folder,value,meter_each,cancel,progress,export_options=None):
         if i not in saved and roll is None:
             p = engine.initial_frame_color(arr,p)
         p.output_space = value.get('output_space','srgb')
-        path = Path(export_image(dest/filenames[i],p.__dict__,arr,unique=True,jpeg=bool((export_options or {}).get('jpeg'))))
+        path = Path(export_image(dest/filenames[i],p.__dict__,arr,unique=True,jpeg=format=='both',jpeg_only=format=='jpeg'))
         frames.append({'frame':i+1,'file':path.name,'params':p.__dict__,'source_region':source_region(i)})
         progress(i+1,layout.frame_count,str(path))
     cancelled = cancel.is_set() and len(frames) < layout.frame_count

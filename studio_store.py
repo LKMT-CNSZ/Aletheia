@@ -185,7 +185,7 @@ class StudioStore:
         return result
 
     def enqueue(self,identifiers,output,whole_roll=True,export_options=None):
-        from export_policy import DEFAULT,names,options
+        from export_policy import DEFAULT,names,options,photo_format
         output=Path(output).resolve();made=[]
         export_options=export_options or {}
         with self.connection() as db:
@@ -194,8 +194,8 @@ class StudioStore:
                 snapshot=asset['snapshot']
                 if snapshot is None:raise ValueError('请先打开并修片：'+asset['name'])
                 snapshot['_export']=options(export_options.get('template') or DEFAULT,asset['roll'],export_options.get('date',''))
+                snapshot['_export']['format']=photo_format(export_options)
                 snapshot['_flat_export']=True
-                snapshot['_export_jpeg']=bool(export_options.get('jpeg'))
                 snapshot['_queue_engine']=engine_signature()
                 count=snapshot['frame_count'];current=snapshot['current_frame']
                 indices=list(range(count)) if whole_roll else [current]

@@ -317,7 +317,7 @@ def write_jpeg(path,wide,working_space):
     Image.fromarray(pixels).save(io_path(path),'JPEG',quality=95,subsampling=0,icc_profile=colorio.icc_profile('srgb'))
 
 
-def export_pixels(path,arr,p,compression='deflate',progress=None,jpeg=None):
+def export_pixels(path,arr,p,compression='deflate',progress=None,jpeg=None,jpeg_only=False):
     from tiffio import write_tiff_strips,strip_rows
     from runtime_metrics import memory
     global LAST_EXPORT
@@ -325,6 +325,11 @@ def export_pixels(path,arr,p,compression='deflate',progress=None,jpeg=None):
     LAST_EXPORT={'status':'running','input_shape':list(arr.shape),'output_space':p.output_space}
     try:
         wide=core.process(arr,p,target_space=p.working_space)
+        if jpeg_only:
+            write_jpeg(path,wide,p.working_space)
+            LAST_EXPORT.update(status='completed',output_shape=list(wide.shape),output_space='srgb')
+            if progress is not None:progress(wide.shape[0],wide.shape[0])
+            return
         if jpeg is not None:write_jpeg(jpeg,wide,p.working_space)
         rows=strip_rows(wide.shape[1]);report={}
         write_tiff_strips(path,wide.shape[:2],colorio.export_strips(wide,p.output_space,p.working_space,report,rows),icc_profile=colorio.icc_profile(p.output_space),rows=rows,compress=compression,progress=progress)

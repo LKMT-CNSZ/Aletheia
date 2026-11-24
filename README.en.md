@@ -1,6 +1,6 @@
 # Aletheia
 
-**3.2.0 stable release.** Download the [Windows installer, portable ZIP, source and checksums](https://github.com/LKMT-CNSZ/Aletheia/releases/tag/v3.2.0).
+**3.2.1-rc1 local preview.** The prior stable release offers the [Windows installer, portable ZIP, source and checksums](https://github.com/LKMT-CNSZ/Aletheia/releases/tag/v3.2.0).
 
 **A local film inversion and photo editing tool for Windows.**
 
@@ -20,7 +20,7 @@ Since version **3.0.1**, the app offers a **Simplified Chinese / English** inter
 - **Chart calibration:** reference CSV import, individual or grid sampling, linear RGB matrix fitting, training and validation patch roles, and reusable correction profiles.
 - **Photo library:** independent edits, ratings, pick / reject flags, roll tags, search, filters, source relinking, backup and restoration.
 - **Batch workflow:** per-photo preparation, grouping, selected-parameter synchronization, independent EV adjustments, 4-up / 9-up proofing, visual review and an export queue with frozen parameter snapshots.
-- **Delivery:** 16-bit TIFF, parameter recipes, film projects, PNG contact sheets, batch summaries and project transfer packages that can include source files.
+- **Delivery:** 16-bit TIFF, SDR JPEG, parameter recipes, film projects, PNG or JPEG contact sheets, batch summaries and project transfer packages that can include source files.
 
 ## Get started
 
@@ -81,7 +81,7 @@ If the reported display peak is missing or outside 80–10000 nits, HDR preview 
 
 ## TIFF export and lossless compression
 
-Export TIFF / HDR offers SDR 16-bit and HDR Float32 TIFF, each with **Lossless ZIP** or **Uncompressed**. Lossless ZIP is the default, and the last compression choice is remembered. An active HDR canvas defaults to HDR TIFF; the explicit linear HDR TIFF menu also selects HDR. JPEG XR and Ultra HDR JPEG are no longer offered. Single-photo export can also save a companion SDR JPEG. Roll and batch exports remain lossless SDR 16-bit TIFF.
+**Export Photo** offers full-size SDR JPEG, SDR 16-bit TIFF, and HDR Float32 TIFF. Each TIFF variant supports **Lossless ZIP** or **Uncompressed**. Roll, library queue and batch export offer **TIFF only**, **JPEG only** or **TIFF and JPEG**. JPEG includes an sRGB ICC profile and uses the current SDR rendition of HDR edits. Roll and batch contact sheets can be saved as PNG or JPEG.
 
 Standard TIFF Deflate compression preserves resolution, sample bits, ICC profiles and processing metadata. HDR remains 32-bit floating-point RGB with above-white highlights and can be reopened. Uncompressed 4320 x 5760 RGB pixels alone use 298,598,400 bytes; compression depends on content, grain and noise. HDR TIFF display brightness still depends on viewer support.
 

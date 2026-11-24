@@ -6,6 +6,7 @@ import os
 import sys
 import tempfile
 import time
+from unittest.mock import patch
 os.environ['QT_QPA_PLATFORM']='offscreen'
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 import numpy as np
@@ -47,8 +48,18 @@ with tempfile.TemporaryDirectory(dir=ROOT/'build'/'tests',prefix='studio-') as f
     window.open_studio();app.processEvents();dialog=window.studio_dialog
     assert dialog.library.rowCount()==2 and dialog.queue.rowCount()==1
     dialog.search.setText('卷 A');assert dialog.library.rowCount()==1
+    dialog.library.selectRow(0)
+    with patch.object(ui.QInputDialog,'getItem',return_value=('仅 JPEG',True)), \
+         patch.object(ui.QFileDialog,'getExistingDirectory',return_value=str(folder/'库 JPEG')):
+        dialog.enqueue()
+    jpeg_job=next(j for j in fresh.jobs() if j['id']!=job)
+    assert jpeg_job['snapshot']['_export']['format']=='jpeg'
+    fresh.request_pause(jpeg_job['id'])
     dialog.search.clear();dialog.hide()
     window.loaded=False  # Pure worker fixtures below own the in-process model.
+    assert worker.execute(fresh,jpeg_job['id'])=='paused'
+    fresh.retry([jpeg_job['id']]);assert worker.execute(fresh,jpeg_job['id'])=='completed'
+    assert [p.suffix for p in (folder/'库 JPEG').iterdir()]==['.jpg']
     # Pause exactly after one committed frame; reopening does not rerender it.
     def pause(done,total,path):
         if done==1:fresh.request_pause(job)

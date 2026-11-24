@@ -4,8 +4,27 @@ import math
 import numpy as np
 from PySide6.QtCore import Qt,Signal,QPointF,QRectF
 from PySide6.QtGui import QColor,QPainter,QPen,QPainterPath,QImage,QPixmap,QColorSpace,QBrush,QIcon
-from PySide6.QtWidgets import QWidget,QGraphicsView,QGraphicsScene,QGraphicsPixmapItem,QGraphicsEllipseItem,QGraphicsSimpleTextItem,QGraphicsItem,QHBoxLayout,QLabel,QSlider,QDoubleSpinBox
+from PySide6.QtWidgets import QWidget,QGraphicsView,QGraphicsScene,QGraphicsPixmapItem,QGraphicsEllipseItem,QGraphicsSimpleTextItem,QGraphicsItem,QHBoxLayout,QLabel,QSlider,QDoubleSpinBox,QComboBox,QInputDialog
 import core
+
+PHOTO_FORMAT_LABELS={'tiff':_t('仅 TIFF'),'jpeg':_t('仅 JPEG'),'both':_t('TIFF 和 JPEG')}
+CONTACT_FORMAT_LABELS={'png':'PNG','jpeg':'JPEG'}
+
+
+def format_combo(label,choices,default):
+    combo=QComboBox()
+    _ui(combo.setAccessibleName,label)
+    for key,text in choices.items():
+        _ui(combo.addItem,text,key)
+    combo.setCurrentIndex(max(0,combo.findData(default)))
+    return combo
+
+
+def choose_format(parent,title,choices,default):
+    keys=list(choices)
+    labels=list(choices.values())
+    label,accepted=_ui(QInputDialog.getItem,parent,title,_t('导出格式'),labels,keys.index(default),False)
+    return keys[labels.index(label)] if accepted else None
 
 
 def photo_icon(pixmap):

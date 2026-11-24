@@ -1,12 +1,22 @@
-"""Paginated, shareable sRGB PNG contact sheets of the current edited roll."""
+"""Paginated, shareable sRGB contact sheets of the current edited roll."""
 from pathlib import Path
 import json,os,shutil,tempfile,uuid
 import numpy as np
 from PIL import Image,ImageDraw,ImageFont
 from app_paths import APP_NAME
 
-def export(folder,snapshot,cancel=None,progress=lambda *a:None):
-    import desktop_model as model,colorio,core,studio_worker
+def save_page(page,folder,number,format):
+    from colorio import icc_profile
+    extension='jpg' if format=='jpeg' else 'png'
+    path=folder/f'contact-{number:03d}.{extension}'
+    settings={'quality':95,'subsampling':0} if format=='jpeg' else {}
+    page.save(path,icc_profile=icc_profile('srgb'),**settings)
+    return path
+
+
+def export(folder,snapshot,cancel=None,progress=lambda *a:None,format='png'):
+    import desktop_model as model,core,studio_worker
+    if format not in ('png','jpeg'):raise ValueError('联系表格式无效')
     parent=Path(folder).resolve();parent.mkdir(parents=True,exist_ok=True)
     final=parent/('联系表-'+uuid.uuid4().hex[:12]);stage=Path(tempfile.mkdtemp(dir=parent,prefix='.contact-'))
     try:
@@ -30,7 +40,7 @@ def export(folder,snapshot,cancel=None,progress=lambda *a:None):
             while len(caption)>1 and draw.textlength(caption,font=font)>375:caption=caption[:-2]+'…'
             draw.text((x,y+308),caption,font=font,fill='black')
             records.append({'frame':i+1,'page':i//20+1,'cell':i%20,'filename':filenames[i],'params':p.__dict__,'source_region':model.source_region(i)})
-            if i%20==19 or i==indices[-1]:page.save(stage/f'contact-{i//20+1:03d}.png',icc_profile=colorio.icc_profile('srgb'))
+            if i%20==19 or i==indices[-1]:save_page(page,stage,i//20+1,format)
             progress(i+1,len(indices),'联系表')
         model.write_json(stage/'contact-index.json',{'format':'film-invert-contact','version':1,'encoding':'srgb','source':snapshot['source'],'input':snapshot['input'],'export_options':snapshot.get('_export'),'frames':records})
         if cancel is not None and cancel.is_set():raise ValueError('已取消联系表；未发布输出')

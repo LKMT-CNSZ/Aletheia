@@ -11,22 +11,24 @@ FIELDS={'style':('mode','film','slope','d_min','saturation','crosstalk'),
 DEFAULT={'input_mode':'single','input_color':'legacy','working_space':'auto','method':'auto',
          'fields':['style','output'],'sync_mode':'absolute','exposure_delta':0.,
          'group_rule':'manual','stop_after':'style','require_review':True,'whole_roll':True,
-         'template':'{source}-f{frame:04d}-positive','output':'','jpeg':False}
+         'template':'{source}-f{frame:04d}-positive','output':'','format':'tiff','contact_format':'png'}
 def clone(value):return copy.deepcopy(value)
 def settings(value):
-    from export_policy import validate
+    from export_policy import photo_format,validate
     from input_color import CHOICES
     result={**DEFAULT,**value}
     choices={'input_mode':('single','strip','auto'),'working_space':('auto','srgb','prophoto'),
              'method':('auto','sync','existing'),'sync_mode':('absolute','relative'),
-             'group_rule':('manual','folder','tag','space','prefix'),'stop_after':('check','prepare','style')}
+             'group_rule':('manual','folder','tag','space','prefix'),'stop_after':('check','prepare','style'),
+             'contact_format':('png','jpeg')}
     for key,options in choices.items():
         if result[key] not in options:raise ValueError('批次设置无效：'+key)
     if result['input_color'] not in CHOICES:raise ValueError('输入色彩无效')
     if not isinstance(result['fields'],list) or any(x not in FIELDS for x in result['fields']):raise ValueError('同步字段无效')
     result['exposure_delta']=float(result['exposure_delta'])
     if not -4<=result['exposure_delta']<=4:raise ValueError('相对曝光应在 ±4 EV 内')
-    for key in ('require_review','whole_roll','jpeg'):result[key]=bool(result[key])
+    for key in ('require_review','whole_roll'):result[key]=bool(result[key])
+    result['format']=photo_format(value)
     validate(result['template']);return {k:result[k] for k in DEFAULT}
 def snapshot_key(snapshot):
     if snapshot is None:return None
@@ -231,7 +233,7 @@ class BatchStore:
             data['report']=None;data.pop('report_error',None)
         self.edit(identifier,apply)
     def enqueue(self,identifier):
-        from export_policy import DEFAULT,names,options
+        from export_policy import DEFAULT,names,options,photo_format
         data=self.get(identifier);config=data['config'];output=Path(config['output']).resolve() if config['output'] else None
         if data['status']=='running':raise ValueError('请等待批次步骤完成')
         revision=data['updated']
@@ -249,8 +251,8 @@ class BatchStore:
                 snapshot=clone(item['snapshot']);source=snapshot['source'];stat=io_path(source['path']).stat()
                 if (stat.st_size,stat.st_mtime_ns)!=(source['size'],source['mtime_ns']):raise ValueError('原片有变化，请重新检查：'+item['name'])
                 snapshot['_export']=options(config['template'] or DEFAULT,item['group']);snapshot['_queue_engine']=engine_signature()
+                snapshot['_export']['format']=photo_format(config)
                 snapshot['_flat_export']=True
-                snapshot['_export_jpeg']=bool(config.get('jpeg'))
                 snapshot['_batch']={'id':identifier,'group':item['group'],'asset':item['asset']}
                 indices=list(range(snapshot['frame_count'])) if config['whole_roll'] else [snapshot['current_frame']]
                 names(source['path'],indices,snapshot['_export']);job=uuid.uuid4().hex

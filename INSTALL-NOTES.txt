@@ -1,6 +1,5 @@
-Aletheia 3.2.0 正式版 · Windows x64
+Aletheia 3.2.1-rc1 本地试用版 · Windows x64
 
-安装版：运行 Aletheia-3.2.0-setup-win64.exe。默认位置为 %LOCALAPPDATA%\Programs\Aletheia\3.2.0。
-免安装版：解压 Aletheia-3.2.0-win64.zip，运行「启动 Aletheia.cmd」。
+安装版：运行 Aletheia-3.2.1-rc1-setup-win64.exe。默认位置为 %LOCALAPPDATA%\Programs\Aletheia\3.2.1-rc1。
 
 使用说明见「软件介绍.html」。新版安装验证成功后可清理符合条件的旧版本。

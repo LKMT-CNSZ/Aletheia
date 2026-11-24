@@ -101,8 +101,9 @@ def thumbnail(studio,batch,item,snapshot,prefix):
     return str(path)
 
 def report(studio,store,identifier):
-    """Read completed outputs for an sRGB contact sheet; never re-export a TIFF."""
-    import desktop_model as model,colorio,io
+    """Read completed photos to make an sRGB contact sheet."""
+    import desktop_model as model,io
+    from contact_sheet import save_page
     data=store.get(identifier);root=Path(data.get('export_root') or data['config']['output'] or studio.folder/'batch-reports')
     folder=io_path(root/('report-'+time.strftime('%Y%m%d-%H%M%S')+'-'+uuid.uuid4().hex[:8]));folder.mkdir(parents=True,exist_ok=False)
     entries=[];tiles=[];failures=[]
@@ -114,15 +115,16 @@ def report(studio,store,identifier):
         if job:
             for key,record in job['outputs'].items():
                 if record['state']!='done':continue
-                path=io_path(Path(job['destination'])/record['tiff']['name'])
+                primary=record.get('tiff') or record['jpeg']
+                path=io_path(Path(job['destination'])/primary['name'])
                 try:
                     from studio_store import sha256
-                    if sha256(path)!=record['tiff']['sha256']:raise ValueError('输出校验不符')
+                    if sha256(path)!=primary['sha256']:raise ValueError('输出校验不符')
                     with Image.open(path) as source:
                         profile=source.info.get('icc_profile');source.thumbnail((350,230),Image.Resampling.LANCZOS);image=source.convert('RGB')
                     if profile:image=ImageCms.profileToProfile(image,ImageCms.ImageCmsProfile(io.BytesIO(profile)),ImageCms.createProfile('sRGB'),outputMode='RGB')
                     tiles.append((item['name']+' #'+str(int(key)+1),image))
-                    outputs.append({'frame':int(key)+1,'path':str(path),'params':record['params'],'sha256':record['tiff']['sha256']})
+                    outputs.append({'frame':int(key)+1,'path':str(path),'params':record['params'],'sha256':primary['sha256']})
                 except Exception as error:failures.append({'name':item['name'],'stage':'contact','error':str(error)})
         entries.append({'name':item['name'],'asset':item['asset'],'group':item['group'],'selected':item['selected'],'skipped':item['skip'],
                         'stage':item['stage'],'reviewed':item['reviewed'],'job':item.get('job'),'job_status':job['status'] if job else None,
@@ -137,7 +139,7 @@ def report(studio,store,identifier):
             try:font=ImageFont.truetype('C:/Windows/Fonts/msyh.ttc',16)
             except OSError:font=ImageFont.load_default()
             draw.text((x,y+240),name[:36],fill='white',font=font)
-        path=folder/('contact-'+str(len(pages)+1).zfill(3)+'.png');page.save(path,icc_profile=colorio.icc_profile('srgb'));pages.append(str(path))
+        path=save_page(page,folder,len(pages)+1,data['config'].get('contact_format','png'));pages.append(str(path))
     result={'format':'film-invert-batch-report','version':1,'batch':identifier,'name':data['name'],'created':time.time(),
             'files':len(entries),'completed_frames':len(tiles),'contact_pages':pages,'items':entries,'failures':failures}
     model.write_json(folder/'batch-summary.json',result)
